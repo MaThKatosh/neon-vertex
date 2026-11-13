@@ -30,6 +30,13 @@ upgrades permanentes no **Hangar**. Quanto mais você joga, mais forte fica. Zer
 Todas as teclas e botões podem ser trocados em **CONTROLES** no menu inicial (2 teclas + 1 botão de controle por ação).
 No celular dá para ajustar a sensibilidade do arrasto, o lado dos botões (canhotos) e ligar/desligar o botão de foco.
 
+## Opções e idiomas
+
+- **OPÇÕES** (no menu inicial e na pausa): idioma **Português / English**, volume da música e dos efeitos,
+  tremor de tela e flashes (normal / reduzido / desligado) e tela cheia no PC.
+- O idioma começa no do sistema. Os textos ficam em `scripts/i18n.gd`: o português é a chave e o inglês fica no
+  dicionário `EN`. Para outro idioma, crie outro dicionário igual.
+
 ## Mecânicas
 
 - **3 corações**, com invulnerabilidade após levar dano. Ao ser atingido, as balas próximas são apagadas.
@@ -111,3 +118,8 @@ tests/
 - **Dificuldade**: `cfg.gd` (jogador), `phase_hp` de cada chefe, e `_set_difficulty()` no `main.gd` (ciclos).
 - **Fonte própria**: coloque um arquivo em `assets/fonts/game_font.ttf`.
 - **Sons de verdade**: troque os itens de `Sfx.sounds` e `Sfx.tracks` por arquivos `.wav` ou `.ogg`.
+
+## Créditos
+
+- Fontes **Orbitron** e **Chakra Petch**: Google Fonts, licença SIL Open Font License 1.1 (veja `assets/fonts/OFL-*.txt`).
+- Motor: **Godot Engine** (licença MIT).

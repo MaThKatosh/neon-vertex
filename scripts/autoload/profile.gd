@@ -12,9 +12,37 @@ var ng_cleared := -1         # maior NG concluído (-1 = nunca zerou; 0 = zerou 
 var ng_selected := 0         # modo escolhido no Hangar
 var save_enabled := true     # os testes automáticos desligam
 
+# Opções (tela OPÇÕES). shake/flash: 1.0 normal, 0.5 reduzido, 0.0 desligado.
+var settings := {"lang": "", "music": 0.8, "sfx": 0.8, "shake": 1.0, "flash": 1.0, "fullscreen": false}
+
 
 func _ready() -> void:
 	load_profile()
+	if str(settings["lang"]) == "":
+		settings["lang"] = I18n.default_lang()
+	apply_settings()
+
+
+## Aplica idioma, volumes e tela cheia.
+func apply_settings() -> void:
+	I18n.setup(str(settings["lang"]))
+	Sfx.set_volumes(float(settings["music"]), float(settings["sfx"]))
+	if can_fullscreen():
+		var fs := bool(settings["fullscreen"])
+		DisplayServer.window_set_mode(DisplayServer.WINDOW_MODE_FULLSCREEN if fs else DisplayServer.WINDOW_MODE_WINDOWED)
+
+
+## Tela cheia só faz sentido no PC (no celular já é tela cheia; no navegador há o botão do itch.io).
+static func can_fullscreen() -> bool:
+	return not (OS.has_feature("web") or OS.has_feature("mobile") or DisplayServer.get_name() == "headless")
+
+
+func shake_mult() -> float:
+	return float(settings["shake"])
+
+
+func flash_mult() -> float:
+	return float(settings["flash"])
 
 
 func load_profile() -> void:
@@ -29,6 +57,10 @@ func load_profile() -> void:
 	start_weapon = str(cf.get_value("profile", "start_weapon", "spread"))
 	ng_cleared = int(cf.get_value("profile", "ng_cleared", -1))
 	ng_selected = clampi(int(cf.get_value("profile", "ng_selected", 0)), 0, ng_available())
+	var saved: Dictionary = cf.get_value("settings", "values", {})
+	for k in saved:
+		if settings.has(k):
+			settings[k] = saved[k]
 	if not weapon_owned(start_weapon):
 		start_weapon = "spread"
 
@@ -46,6 +78,7 @@ func save_profile() -> void:
 	cf.set_value("profile", "start_weapon", start_weapon)
 	cf.set_value("profile", "ng_cleared", ng_cleared)
 	cf.set_value("profile", "ng_selected", ng_selected)
+	cf.set_value("settings", "values", settings)
 	cf.save(Cfg.SAVE_PATH)
 
 
@@ -79,7 +112,7 @@ func is_available(id: String) -> bool:
 ## Texto do requisito de um item bloqueado.
 func req_text(id: String) -> String:
 	var r := int(upgrade_def(id).get("req", -1))
-	return "ZERE O JOGO" if r == 0 else "ZERE O NG+%d" % r
+	return I18n.t("ZERE O JOGO") if r == 0 else I18n.t("ZERE O NG+%d") % r
 
 
 ## Custo do próximo nível, ou -1 se já está no máximo.

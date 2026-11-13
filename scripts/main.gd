@@ -62,6 +62,10 @@ var _shop_drag := 0.0
 var ctl_sel := 0
 var ctl_col := 0
 
+# tela de opções
+var opt_sel := 0
+var _menu_return := "title"   # para onde OPÇÕES/CONTROLES voltam ("title" ou "paused")
+
 var bg
 var items
 var hud
@@ -141,6 +145,8 @@ func _physics_process(dt: float) -> void:
 			_update_title(dt)
 		"controls":
 			_update_controls(dt)
+		"options":
+			_update_options(dt)
 		"shop":
 			_update_shop(dt)
 		"playing":
@@ -154,7 +160,7 @@ func _physics_process(dt: float) -> void:
 			if Controls.pressed("pause"):
 				_set_state("playing")
 			else:
-				_menu(["CONTINUAR", "ABANDONAR MISSÃO"], _on_pause_menu)
+				_menu(["CONTINUAR", "OPÇÕES", "CONTROLES", "ABANDONAR MISSÃO"], _on_pause_menu)
 		"gameover":
 			bg.speed = 0.3
 			bg.step(dt)
@@ -166,7 +172,7 @@ func _physics_process(dt: float) -> void:
 			fx.step(dt)
 			if state_t > 1.2:
 				var next_ng := mini(loop + 1, Cfg.NG_MAX)
-				_menu(["SEGUIR PARA %s" % Profile.ng_label(next_ng), "HANGAR (LOJA)"], _on_victory_menu)
+				_menu([I18n.t("SEGUIR PARA %s") % Profile.ng_label(next_ng), "HANGAR (LOJA)"], _on_victory_menu)
 
 	cam.offset = Vector2(randf_range(-1.0, 1.0), randf_range(-1.0, 1.0)) * fx.shake if fx.shake > 0.1 else Vector2.ZERO
 	hud.queue_redraw()
@@ -178,20 +184,37 @@ func _update_title(dt: float) -> void:
 	bg.step(dt)
 	# chama do motor do triângulo da tela inicial
 	if randf() < 0.8:
-		var y := Cfg.H * 0.5 + sin(t * 2.0) * 6.0 + 20.0
+		var y := Cfg.H * 0.42 + sin(t * 2.0) * 6.0 + 20.0
 		fx.emit(Vector2(Cfg.W / 2.0 + randf_range(-3.0, 3.0), y), Vector2(randf_range(-20.0, 20.0), randf_range(160.0, 260.0)), Cfg.MAGENTA, 0.3, 3.0)
 	fx.step(dt)
 	if state_t > 0.3:
-		_menu(["JOGAR", "CONTROLES"], _on_title_menu)
+		_menu(["JOGAR", "OPÇÕES", "CONTROLES"], _on_title_menu)
 
 
 func _on_title_menu(i: int) -> void:
-	if i == 0:
-		_open_shop()
+	match i:
+		0:
+			_open_shop()
+		1:
+			_open_submenu("options", "title")
+		_:
+			_open_submenu("controls", "title")
+
+
+## Abre OPÇÕES ou CONTROLES lembrando de onde veio (menu inicial ou pausa).
+func _open_submenu(which: String, from: String) -> void:
+	_menu_return = from
+	opt_sel = 0
+	ctl_sel = 0
+	ctl_col = 0
+	_set_state(which)
+
+
+func _menu_back() -> void:
+	if _menu_return == "paused":
+		_set_state("paused")
 	else:
-		ctl_sel = 0
-		ctl_col = 0
-		_set_state("controls")
+		_to_title()
 
 
 func _update_playing(dt: float) -> void:
@@ -294,16 +317,16 @@ func _end_run(won: bool) -> void:
 		new_hi = true
 	Profile.save_profile()
 	summary = [
-		"MODO  %s" % Profile.ng_label(loop),
-		"PONTOS  %d" % score,
-		"NOVO RECORDE!" if new_hi else "RECORDE  %d" % Profile.hi,
-		"SETOR ALCANÇADO  %d / %d" % [stage_idx + 1, Stages.ALL.size()],
-		"CRÉDITOS GANHOS  +%d" % run_credits,
+		[I18n.t("MODO  %s") % Profile.ng_label(loop), Color(1, 1, 1, 0.6)],
+		I18n.t("PONTOS  %d") % score,
+		I18n.t("NOVO RECORDE!") if new_hi else I18n.t("RECORDE  %d") % Profile.hi,
+		I18n.t("SETOR ALCANÇADO  %d / %d") % [stage_idx + 1, Stages.ALL.size()],
+		[I18n.t("CRÉDITOS GANHOS  +%d") % run_credits, Cfg.YELLOW],
 	]
 	for id in unlocked:
-		summary.append("LIBERADO NA ABA ELITE: %s" % Profile.upgrade_def(id)["name"])
+		summary.append([I18n.t("LIBERADO NA ABA ELITE: %s") % I18n.t(Profile.upgrade_def(id)["name"]), Cfg.PURPLE])
 	if won and Profile.ng_available() > prev_avail:
-		summary.append("LIBERADO: %s" % Profile.ng_label(loop + 1))
+		summary.append([I18n.t("LIBERADO: %s") % Profile.ng_label(loop + 1), Cfg.PURPLE])
 	if won:
 		_set_state("victory")
 		Sfx.music("title")
@@ -349,10 +372,97 @@ func _menu(opts: Array, cb: Callable) -> void:
 
 
 func _on_pause_menu(i: int) -> void:
-	if i == 0:
-		_set_state("playing")
-	else:
-		_end_run(false)
+	match i:
+		0:
+			_set_state("playing")
+		1:
+			_open_submenu("options", "paused")
+		2:
+			_open_submenu("controls", "paused")
+		_:
+			_end_run(false)
+
+
+# ------------------------------------------------------------------ tela de opções
+
+## Linhas: idioma, música, efeitos, tremor, flashes, [tela cheia no PC], voltar.
+func opt_rows() -> Array:
+	var rows := ["lang", "music", "sfx", "shake", "flash"]
+	if Profile.can_fullscreen():
+		rows.append("fullscreen")
+	rows.append("back")
+	return rows
+
+
+func opt_row_y(i: int) -> float:
+	# espaço extra antes das seções ÁUDIO (linha 1) e CONFORTO VISUAL (linha 3) e antes do VOLTAR
+	var extra := (26.0 if i >= 1 else 0.0) + (26.0 if i >= 3 else 0.0)
+	if i == opt_rows().size() - 1:
+		extra += 20.0
+	return 196.0 + i * 60.0 + extra
+
+
+func _update_options(dt: float) -> void:
+	bg.speed = 0.3
+	if _menu_return == "title":
+		bg.step(dt)
+	fx.step(dt)
+	var rows := opt_rows()
+	var n := rows.size()
+	if Controls.pressed("up"):
+		opt_sel = (opt_sel + n - 1) % n
+		Sfx.play("tick")
+	if Controls.pressed("down"):
+		opt_sel = (opt_sel + 1) % n
+		Sfx.play("tick")
+	if Controls.pressed("left"):
+		_opt_adjust(rows[opt_sel], -1)
+	elif Controls.pressed("right"):
+		_opt_adjust(rows[opt_sel], 1)
+	if Controls.pressed("confirm"):
+		if rows[opt_sel] == "back":
+			Sfx.play("select")
+			_menu_back()
+		else:
+			_opt_adjust(rows[opt_sel], 1)
+		return
+	if Controls.pressed("pause") and state_t > 0.2:
+		_menu_back()
+		return
+	for tp in Controls.taps:
+		for i in n:
+			if absf(tp.y - opt_row_y(i)) < 26.0:
+				opt_sel = i
+				if rows[i] == "back":
+					_menu_back()
+				else:
+					_opt_adjust(rows[i], -1 if tp.x < Cfg.W - 140.0 else 1)
+				return
+
+
+func _opt_adjust(row: String, dir: int) -> void:
+	var s: Dictionary = Profile.settings
+	match row:
+		"lang":
+			var i := I18n.LANGS.find(str(s["lang"]))
+			s["lang"] = I18n.LANGS[(i + dir + I18n.LANGS.size()) % I18n.LANGS.size()]
+		"music", "sfx":
+			s[row] = clampf(snappedf(float(s[row]) + 0.1 * dir, 0.1), 0.0, 1.0)
+		"shake", "flash":
+			var steps := [1.0, 0.5, 0.0]
+			var k := steps.find(float(s[row]))
+			s[row] = steps[(maxi(k, 0) + 1 + steps.size()) % steps.size()] if dir > 0 else steps[(maxi(k, 0) + steps.size() - 1) % steps.size()]
+			if row == "shake":
+				fx.add_shake(12.0)    # mostra o efeito na hora
+			else:
+				fx.flash(Cfg.CYAN, 0.4)
+		"fullscreen":
+			s["fullscreen"] = not bool(s["fullscreen"])
+		_:
+			return
+	Profile.apply_settings()
+	Profile.save_profile()
+	Sfx.play("tick")
 
 
 func _on_end_menu(i: int) -> void:
@@ -495,13 +605,13 @@ func _shop_activate(i: int) -> void:
 				Sfx.play("coin")
 				fx.spark(Vector2(Cfg.W - 80.0, shop_card_y(i)), Cfg.YELLOW, 16, 240.0)
 				fx.ring(Vector2(Cfg.W - 80.0, shop_card_y(i)), Cfg.YELLOW, 50.0, 0.3, 2.0)
-				_shop_say("COMPRADO: %s NV %d" % [Profile.upgrade_def(id)["name"], Profile.level(id)], Cfg.LIME)
+				_shop_say(I18n.t("COMPRADO: %s NV %d") % [I18n.t(Profile.upgrade_def(id)["name"]), Profile.level(id)], Cfg.LIME)
 			"max":
 				Sfx.play("deny")
 				_shop_say("NÍVEL MÁXIMO", Cfg.WHITE)
 			"locked":
 				Sfx.play("deny")
-				_shop_say("BLOQUEADO: %s" % Profile.req_text(id), Cfg.PURPLE)
+				_shop_say(I18n.t("BLOQUEADO: %s") % Profile.req_text(id), Cfg.PURPLE)
 			_:
 				Sfx.play("deny")
 				_shop_say("CRÉDITOS INSUFICIENTES", Cfg.RED)
@@ -578,7 +688,7 @@ func _update_controls(dt: float) -> void:
 		_ctl_activate(ctl_sel, ctl_col)
 		return
 	if Controls.pressed("pause") and state_t > 0.2:
-		_to_title()
+		_menu_back()
 		return
 	for tp in Controls.taps:
 		for i in n:
@@ -620,7 +730,7 @@ func _ctl_activate(i: int, col: int) -> void:
 			Sfx.play("coin")
 		"back":
 			Sfx.play("select")
-			_to_title()
+			_menu_back()
 		_:
 			_ctl_adjust(row["type"], 1)
 
@@ -656,7 +766,7 @@ func _begin_stage(i: int) -> void:
 	player.shield = maxi(player.shield, Profile.shield_charges())
 	var sub: String = stage["sub"]
 	if loop > 0:
-		sub += "  //  NG+%d" % loop
+		sub = I18n.t(sub) + "  //  NG+%d" % loop
 	show_banner(stage["name"], sub, stage["color"], 2.6)
 	Sfx.music("stage", Sfx.tier_for(stage_idx, loop))
 
@@ -893,7 +1003,7 @@ func on_boss_defeated(b) -> void:
 	b.queue_free()
 	phase = "clear"
 	pt = 0.0
-	show_banner("SETOR LIMPO", "+20000 PONTOS   +%d CRÉDITOS" % cr, Cfg.LIME, 3.0)
+	show_banner("SETOR LIMPO", I18n.t("+20000 PONTOS   +%d CRÉDITOS") % cr, Cfg.LIME, 3.0)
 	Sfx.music("silence")
 	Sfx.play("clear")
 	_bank()

@@ -7,6 +7,7 @@ extends RefCounted
 static var _glow: Texture2D
 static var _core: Texture2D
 static var _font: Font
+static var _title_font: Font
 
 
 static func glow_tex() -> Texture2D:
@@ -37,14 +38,33 @@ static func _radial(offsets: Array, colors: Array) -> Texture2D:
 	return t
 
 
-## Fonte: coloque um .ttf em res://assets/fonts/game_font.ttf para trocar a fonte do jogo inteiro.
+## Fonte da interface: Chakra Petch (licença OFL, em assets/fonts). Cai na fonte padrão se faltar.
 static func font() -> Font:
 	if _font == null:
-		if ResourceLoader.exists("res://assets/fonts/game_font.ttf"):
-			_font = load("res://assets/fonts/game_font.ttf")
-		else:
-			_font = ThemeDB.fallback_font
+		_font = _load_font("res://assets/fonts/ChakraPetch-SemiBold.ttf")
 	return _font
+
+
+## Fonte dos títulos grandes: Orbitron (fonte variável, usada no peso 800).
+static func title_font() -> Font:
+	if _title_font == null:
+		var base := _load_font("res://assets/fonts/Orbitron.ttf")
+		if base == ThemeDB.fallback_font:
+			_title_font = base
+		else:
+			var fv := FontVariation.new()
+			fv.base_font = base
+			fv.variation_opentype = {TextServerManager.get_primary_interface().name_to_tag("wght"): 800}
+			_title_font = fv
+	return _title_font
+
+
+static func _load_font(path: String) -> Font:
+	if ResourceLoader.exists(path):
+		var f = load(path)
+		if f is Font:
+			return f
+	return ThemeDB.fallback_font
 
 
 ## Cor "quente" para HDR (brilha mais no glow).
@@ -97,10 +117,12 @@ static func orb(ci: CanvasItem, pos: Vector2, r: float, col: Color) -> void:
 		hot(col.lerp(Color.WHITE, 0.65), 1.4))
 
 
-## Texto centralizado verticalmente em `pos.y`.
+## Texto centralizado verticalmente em `pos.y`. O texto é traduzido automaticamente (veja i18n.gd).
 static func text(ci: CanvasItem, s: String, pos: Vector2, size: int, col: Color,
-		align := HORIZONTAL_ALIGNMENT_CENTER, glow_on := true) -> void:
-	var f := font()
+		align := HORIZONTAL_ALIGNMENT_CENTER, glow_on := true, f: Font = null) -> void:
+	if f == null:
+		f = font()
+	s = TranslationServer.translate(s)
 	var w := 1000.0
 	var x := pos.x
 	if align == HORIZONTAL_ALIGNMENT_CENTER:
@@ -122,6 +144,7 @@ static func glitch(ci: CanvasItem, s: String, pos: Vector2, size: int, t: float,
 		j = randf_range(-8.0, 8.0)
 	var d := 2.5 + absf(j) * 0.5
 	var dy := 2.0 if j != 0.0 else 0.0
-	text(ci, s, pos + Vector2(-d + j, 0.0), size, Color(c1, alpha), HORIZONTAL_ALIGNMENT_CENTER, true)
-	text(ci, s, pos + Vector2(d - j, dy), size, Color(c2, alpha), HORIZONTAL_ALIGNMENT_CENTER, true)
-	text(ci, s, pos, size, Color(1, 1, 1, alpha), HORIZONTAL_ALIGNMENT_CENTER, false)
+	var tf := title_font()
+	text(ci, s, pos + Vector2(-d + j, 0.0), size, Color(c1, alpha), HORIZONTAL_ALIGNMENT_CENTER, true, tf)
+	text(ci, s, pos + Vector2(d - j, dy), size, Color(c2, alpha), HORIZONTAL_ALIGNMENT_CENTER, true, tf)
+	text(ci, s, pos, size, Color(1, 1, 1, alpha), HORIZONTAL_ALIGNMENT_CENTER, false, tf)

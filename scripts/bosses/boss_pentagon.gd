@@ -6,7 +6,7 @@ extends Boss
 
 
 func _define() -> void:
-	boss_name = "PENTÁGONO // PNT-03"
+	boss_name = "PENTÁGONO // PNT-04"
 	color = Cfg.ORANGE
 	radius = 60.0
 	phase_hp = [750, 850, 880]

@@ -218,7 +218,7 @@ func key_name(k: int) -> String:
 func pad_name(b: int) -> String:
 	if b < 0:
 		return "---"
-	return PAD_NAMES.get(b, "BOTÃO %d" % b)
+	return PAD_NAMES.get(b, I18n.t("BOTÃO %d") % b)
 
 
 func binding_text(action: String, slot: int) -> String:

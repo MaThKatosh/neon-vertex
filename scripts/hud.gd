@@ -27,6 +27,8 @@ func _draw() -> void:
 			_shop()
 		"controls":
 			_controls()
+		"options":
+			_options()
 		_:
 			_hud()
 			if m.boss != null:
@@ -151,7 +153,7 @@ func _hud() -> void:
 	Neon.text(self, "+%d CR" % m.run_credits, Vector2(Cfg.W - 16.0, 58.0), 12, Cfg.YELLOW, HORIZONTAL_ALIGNMENT_RIGHT, false)
 	for i in p.shield:
 		draw_arc(Vector2(Cfg.W - 120.0 - i * 18.0, 58.0), 6.0, 0.0, TAU, 20, Cfg.WHITE, 2.0, true)
-	var mode := "SETOR %02d" % (m.stage_idx + 1)
+	var mode := I18n.t("SETOR %02d") % (m.stage_idx + 1)
 	if m.loop > 0:
 		mode += "  •  NG+%d" % m.loop
 	Neon.text(self, mode, Vector2(Cfg.W / 2.0, 66.0), 10, Color(1, 1, 1, 0.55), HORIZONTAL_ALIGNMENT_CENTER, false)
@@ -234,16 +236,16 @@ func _menu_screen(title: String, col: Color, lines: Array) -> void:
 	var m = main
 	draw_rect(Rect2(0, 0, Cfg.W, Cfg.H), Color(Cfg.BG, 0.78))
 	Neon.glitch(self, title, Vector2(Cfg.W / 2.0, Cfg.H * 0.27), 46, m.t, col, Cfg.CYAN)
+	# cada linha é um texto ou [texto, cor]
 	for i in lines.size():
-		var line := str(lines[i])
+		var line := ""
 		var lc := Cfg.WHITE
-		if line.begins_with("CRÉDITOS"):
-			lc = Cfg.YELLOW
-		elif line.begins_with("LIBERADO"):
-			lc = Cfg.PURPLE
-		elif line.begins_with("MODO"):
-			lc = Color(1, 1, 1, 0.6)
-		Neon.text(self, line, Vector2(Cfg.W / 2.0, Cfg.H * 0.35 + i * 28.0), 15, lc, HORIZONTAL_ALIGNMENT_CENTER, line.begins_with("LIBERADO"))
+		if lines[i] is Array:
+			line = str(lines[i][0])
+			lc = lines[i][1]
+		else:
+			line = str(lines[i])
+		Neon.text(self, line, Vector2(Cfg.W / 2.0, Cfg.H * 0.35 + i * 28.0), 15, lc, HORIZONTAL_ALIGNMENT_CENTER, lc == Cfg.PURPLE)
 	_menu_items(m)
 
 
@@ -273,16 +275,17 @@ func _title() -> void:
 	_menu_items(m)
 
 	var hint := Color(0.75, 0.7, 0.9)
-	var hy := Cfg.H * 0.77
+	var hy := Cfg.H * 0.8
 	if Controls.is_touch:
 		Neon.text(self, "ARRASTE EM QUALQUER LUGAR PARA MOVER", Vector2(c.x, hy), 12, hint, HORIZONTAL_ALIGNMENT_CENTER, false)
 		Neon.text(self, "SEGURE FOCO: LENTO  •  B: BOMBA  •  TIRO AUTOMÁTICO", Vector2(c.x, hy + 22.0), 12, hint, HORIZONTAL_ALIGNMENT_CENTER, false)
 	else:
-		Neon.text(self, "%s/%s: MOVER   %s: FOCO   %s: BOMBA" % [Controls.binding_text("up", 1), Controls.binding_text("down", 1), Controls.binding_text("focus", 0), Controls.binding_text("bomb", 0)], Vector2(c.x, hy), 12, hint, HORIZONTAL_ALIGNMENT_CENTER, false)
+		var keys := [Controls.binding_text("up", 1), Controls.binding_text("down", 1), Controls.binding_text("focus", 0), Controls.binding_text("bomb", 0)].map(func(k): return I18n.t(k))
+		Neon.text(self, I18n.t("%s/%s: MOVER   %s: FOCO   %s: BOMBA") % keys, Vector2(c.x, hy), 12, hint, HORIZONTAL_ALIGNMENT_CENTER, false)
 		Neon.text(self, "TIRO AUTOMÁTICO  •  TECLAS PERSONALIZÁVEIS EM CONTROLES", Vector2(c.x, hy + 22.0), 12, hint, HORIZONTAL_ALIGNMENT_CENTER, false)
-	Neon.text(self, "RECORDE  %08d" % Profile.hi, Vector2(c.x, Cfg.H * 0.9), 13, Cfg.MAGENTA)
-	var ng := "  •  NG+%d CONCLUÍDO" % Profile.ng_cleared if Profile.ng_cleared > 0 else ("  •  JOGO ZERADO" if Profile.ng_cleared == 0 else "")
-	Neon.text(self, "CRÉDITOS  %d%s" % [Profile.credits, ng], Vector2(c.x, Cfg.H * 0.9 + 26.0), 12, Cfg.YELLOW, HORIZONTAL_ALIGNMENT_CENTER, false)
+	Neon.text(self, I18n.t("RECORDE  %08d") % Profile.hi, Vector2(c.x, Cfg.H * 0.9), 13, Cfg.MAGENTA)
+	var ng := I18n.t("  •  NG+%d CONCLUÍDO") % Profile.ng_cleared if Profile.ng_cleared > 0 else (I18n.t("  •  JOGO ZERADO") if Profile.ng_cleared == 0 else "")
+	Neon.text(self, I18n.t("CRÉDITOS  %d%s") % [Profile.credits, ng], Vector2(c.x, Cfg.H * 0.9 + 26.0), 12, Cfg.YELLOW, HORIZONTAL_ALIGNMENT_CENTER, false)
 
 
 # ------------------------------------------------------------------ Hangar (loja)
@@ -329,7 +332,7 @@ func _shop() -> void:
 	_selector(Cfg.SHOP_NG_Y, "MODO", Profile.ng_label(ng), ngc, m.shop_sel == n + 1)
 	if m.shop_sel == n + 1:
 		var info := "liberado só depois de zerar o jogo" if Profile.ng_available() == 0 else \
-			"vida x%.2f  •  tiros +%d%%  •  créditos x%.2f" % [1.0 + ng * 0.25, ng * 10, 1.0 + ng * 0.25]
+			I18n.t("vida x%.2f  •  tiros +%d%%  •  créditos x%.2f") % [1.0 + ng * 0.25, ng * 10, 1.0 + ng * 0.25]
 		Neon.text(self, info, Vector2(cx, Cfg.SHOP_NG_Y + 34.0), 10, Color(1, 1, 1, 0.6), HORIZONTAL_ALIGNMENT_CENTER, false)
 
 	var start_sel: bool = m.shop_sel == n + 2
@@ -365,7 +368,7 @@ func _card(id: String, cy: float, sel: bool, accent: Color) -> void:
 	# nome, descrição e nível
 	var name_col := Cfg.WHITE if avail else Color(0.6, 0.6, 0.7)
 	Neon.text(self, u["name"], Vector2(94, cy - 16), 15, name_col, HORIZONTAL_ALIGNMENT_LEFT, sel and avail)
-	var desc: String = u["desc"] if avail else "Para liberar: " + Profile.req_text(id)
+	var desc: String = u["desc"] if avail else I18n.t("Para liberar: ") + Profile.req_text(id)
 	Neon.text(self, desc, Vector2(94, cy + 5), 11, Color(0.75, 0.75, 0.88) if avail else Color(0.75, 0.55, 1.0, 0.8), HORIZONTAL_ALIGNMENT_LEFT, false)
 	for k in mx:
 		var on := k < lv
@@ -455,7 +458,7 @@ func _controls() -> void:
 	Neon.text(self, "segure FOCO: nave lenta + hitbox visível   •   B: bomba   •   II: pausa", Vector2(24, gy + 42), 11, g, HORIZONTAL_ALIGNMENT_LEFT, false)
 	Neon.text(self, "o tiro é sempre automático", Vector2(24, gy + 62), 11, g, HORIZONTAL_ALIGNMENT_LEFT, false)
 	var hint := "ENTER: trocar tecla  •  ESC: cancelar  •  APAGAR: limpar" if Controls.capturing == "" \
-		else "aperte a nova tecla/botão para %s  (ESC cancela, APAGAR limpa)" % Controls.ACTION_NAMES[Controls.capturing]
+		else I18n.t("aperte a nova tecla/botão para %s  (ESC cancela, APAGAR limpa)") % I18n.t(Controls.ACTION_NAMES[Controls.capturing])
 	Neon.text(self, hint, Vector2(cx, 918.0), 10, Cfg.YELLOW if Controls.capturing != "" else Color(1, 1, 1, 0.45), HORIZONTAL_ALIGNMENT_CENTER, false)
 
 
@@ -466,3 +469,69 @@ func _setting(y: float, label: String, value: String, name_col: Color, sel: bool
 	draw_colored_polygon(PackedVector2Array([Vector2(vx - 74, y), Vector2(vx - 64, y - 7), Vector2(vx - 64, y + 7)]), Color(col, 0.8))
 	draw_colored_polygon(PackedVector2Array([Vector2(vx + 74, y), Vector2(vx + 64, y - 7), Vector2(vx + 64, y + 7)]), Color(col, 0.8))
 	Neon.text(self, value, Vector2(vx, y), 13, col, HORIZONTAL_ALIGNMENT_CENTER, sel)
+
+
+# ------------------------------------------------------------------ tela de opções
+
+func _options() -> void:
+	var m = main
+	var cx := Cfg.W / 2.0
+	draw_rect(Rect2(0, 0, Cfg.W, Cfg.H), Color(Cfg.BG, 0.8))
+	Neon.glitch(self, "OPÇÕES", Vector2(cx, 70.0), 42, m.t, Cfg.CYAN, Cfg.MAGENTA)
+	var rows: Array = m.opt_rows()
+	var s: Dictionary = Profile.settings
+	var sections := {"lang": "GERAL", "music": "ÁUDIO", "shake": "CONFORTO VISUAL"}
+	for i in rows.size():
+		var row: String = rows[i]
+		var y: float = m.opt_row_y(i)
+		var sel: bool = i == m.opt_sel
+		if sections.has(row):
+			Neon.text(self, sections[row], Vector2(24, y - 34), 11, Cfg.PINK, HORIZONTAL_ALIGNMENT_LEFT, false)
+		if row == "back":
+			if sel:
+				_box(Rect2(150, y - 20, Cfg.W - 300, 40), Cfg.LIME, 0.08, 1.4)
+			Neon.text(self, "VOLTAR", Vector2(cx, y), 18, Cfg.LIME if sel else Color(Cfg.LIME, 0.7), HORIZONTAL_ALIGNMENT_CENTER, sel)
+			continue
+		if sel:
+			_box(Rect2(18, y - 22, Cfg.W - 36, 44), Cfg.CYAN, 0.07, 1.4)
+		var label := ""
+		var value := ""
+		match row:
+			"lang":
+				label = "IDIOMA"
+				value = I18n.LANG_NAMES.get(str(s["lang"]), "?")
+			"music":
+				label = "MÚSICA"
+			"sfx":
+				label = "EFEITOS SONOROS"
+			"shake":
+				label = "TREMOR DE TELA"
+				value = _level_name(float(s["shake"]))
+			"flash":
+				label = "FLASHES DE TELA"
+				value = _level_name(float(s["flash"]))
+			"fullscreen":
+				label = "TELA CHEIA"
+				value = "LIGADO" if bool(s["fullscreen"]) else "DESLIGADO"
+		Neon.text(self, label, Vector2(32, y), 15, Cfg.WHITE if sel else Color(0.78, 0.78, 0.9), HORIZONTAL_ALIGNMENT_LEFT, false)
+		var vx := Cfg.W - 130.0
+		var col := Cfg.CYAN if sel else Color(0.85, 0.85, 1.0)
+		draw_colored_polygon(PackedVector2Array([Vector2(vx - 92, y), Vector2(vx - 82, y - 8), Vector2(vx - 82, y + 8)]), Color(col, 0.8))
+		draw_colored_polygon(PackedVector2Array([Vector2(vx + 92, y), Vector2(vx + 82, y - 8), Vector2(vx + 82, y + 8)]), Color(col, 0.8))
+		if row == "music" or row == "sfx":
+			# barra de volume em 10 passos
+			var v := roundi(float(s[row]) * 10.0)
+			for k in 10:
+				draw_rect(Rect2(vx - 70 + k * 14, y - 7, 10, 14), col if k < v else Color(col, 0.15))
+		else:
+			Neon.text(self, value, Vector2(vx, y), 14, col, HORIZONTAL_ALIGNMENT_CENTER, sel)
+	var hint := "toque à esquerda/direita do valor para ajustar" if Controls.is_touch else "esq/dir: ajustar  •  ESC: voltar"
+	Neon.text(self, hint, Vector2(cx, 918.0), 11, Color(1, 1, 1, 0.45), HORIZONTAL_ALIGNMENT_CENTER, false)
+
+
+func _level_name(v: float) -> String:
+	if v >= 0.99:
+		return "LIGADO"
+	if v > 0.01:
+		return "REDUZIDO"
+	return "DESLIGADO"

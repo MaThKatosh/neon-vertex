@@ -95,13 +95,14 @@ func explode(pos: Vector2, col: Color, scale := 1.0) -> void:
 	ring(pos, col, 40.0 * scale, 0.35, 3.0)
 
 
+## Tremor e flash respeitam a opção de conforto visual (normal / reduzido / desligado).
 func add_shake(amount: float) -> void:
-	shake = maxf(shake, amount)
+	shake = maxf(shake, amount * Profile.shake_mult())
 
 
 func flash(col: Color, amount: float) -> void:
 	flash_color = col
-	flash_a = maxf(flash_a, amount)
+	flash_a = maxf(flash_a, amount * Profile.flash_mult())
 
 
 func step(dt: float) -> void:

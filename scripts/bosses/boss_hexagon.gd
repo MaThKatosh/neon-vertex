@@ -6,7 +6,7 @@ extends Boss
 
 
 func _define() -> void:
-	boss_name = "HEXÁGONO // HEX-04"
+	boss_name = "HEXÁGONO // HEX-05"
 	color = Cfg.PURPLE
 	radius = 66.0
 	phase_hp = [900, 950, 1100]

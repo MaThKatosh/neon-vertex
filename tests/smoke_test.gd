@@ -72,9 +72,33 @@ func _physics_process(_dt: float) -> bool:
 				_check(sliced.data.size() == full.data.size(), "trilha em fatias com tamanho diferente")
 				_check(worst < 12000, "fatia de síntese longa demais: %d us" % worst)
 				print("  síntese em fatias: %d fatias, pior fatia %.1f ms" % [slices, worst / 1000.0])
-			if frame == 10:
+			if frame == 8:
+				# OPÇÕES: idioma, volume e conforto visual
 				_check(main.state == "title", "não começou no menu")
 				main._on_title_menu(1)
+				_check(main.state == "options", "menu OPÇÕES não abriu")
+				prof.settings["lang"] = "pt"
+				main._opt_adjust("lang", 1)
+				_check(I18n.t("JOGAR") == "PLAY" and I18n.t("PONTOS  %d") % 5 == "SCORE  5", "tradução para inglês falhou")
+				main._opt_adjust("lang", 1)
+				_check(I18n.t("JOGAR") == "JOGAR", "voltar para português falhou")
+				main._opt_adjust("music", -1)
+				_check(absf(float(prof.settings["music"]) - 0.7) < 0.01, "volume da música não mudou")
+				main._opt_adjust("shake", 1)
+				_check(prof.shake_mult() == 0.5, "tremor não foi reduzido")
+				main._opt_adjust("shake", 1)
+				_check(prof.shake_mult() == 0.0, "tremor não foi desligado")
+				main.fx.shake = 0.0
+				main.fx.add_shake(10.0)
+				_check(main.fx.shake == 0.0, "tremor desligado ainda treme")
+				main._opt_adjust("shake", 1)
+				_check(prof.shake_mult() == 1.0, "tremor não voltou ao normal")
+				_check(Neon.font() != ThemeDB.fallback_font and Neon.title_font() != ThemeDB.fallback_font, "fontes não carregaram")
+				main._menu_back()
+				_check(main.state == "title", "voltar das opções falhou")
+			if frame == 10:
+				_check(main.state == "title", "não começou no menu")
+				main._on_title_menu(2)
 				_check(main.state == "controls", "menu CONTROLES não abriu")
 			if frame == 12:
 				# troca a tecla de BOMBA para B e confere no InputMap

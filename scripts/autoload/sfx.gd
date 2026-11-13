@@ -22,6 +22,7 @@ var _job_synth: Synth = null
 var _job_key := ""
 var _req_mode := ""
 var _req_tier := 0
+var _sfx_db := 0.0
 
 
 func _ready() -> void:
@@ -55,6 +56,12 @@ func _ready() -> void:
 	AudioServer.set_bus_mute(0, muted)
 
 
+## Volumes 0..1 (tela OPÇÕES). Música e efeitos são independentes; M ainda liga/desliga tudo.
+func set_volumes(music_vol: float, sfx_vol: float) -> void:
+	_sfx_db = linear_to_db(maxf(sfx_vol, 0.0001))
+	_music.volume_db = -7.0 + linear_to_db(maxf(music_vol, 0.0001))
+
+
 func play(sound: String, vol_db := 0.0) -> void:
 	if not sounds.has(sound):
 		return
@@ -66,7 +73,7 @@ func play(sound: String, vol_db := 0.0) -> void:
 	var p: AudioStreamPlayer = _players[_next]
 	_next = (_next + 1) % _players.size()
 	p.stream = sounds[sound]
-	p.volume_db = vol_db
+	p.volume_db = vol_db + _sfx_db
 	p.play()
 
 
