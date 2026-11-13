@@ -103,6 +103,20 @@ const EN := {
 	"ÁUDIO": "AUDIO", "GERAL": "GENERAL", "CONFORTO VISUAL": "VISUAL COMFORT",
 	"esq/dir: ajustar  •  ESC: voltar": "left/right: adjust  •  ESC: back",
 	"toque à esquerda/direita do valor para ajustar": "tap left/right of a value to adjust",
+	"DICAS DO TUTORIAL": "TUTORIAL TIPS",
+	# dicas do tutorial
+	"MOVIMENTO": "MOVEMENT", "CHEFE": "BOSS",
+	"%s %s %s %s movem a nave  •  o tiro é automático": "%s %s %s %s move the ship  •  firing is automatic",
+	"segure %s: nave lenta + ponto de acerto visível": "hold %s: slow ship + visible hit point",
+	"aperte %s para limpar a tela de balas": "press %s to clear the screen of bullets",
+	"arraste em qualquer lugar  •  o tiro é automático": "drag anywhere  •  firing is automatic",
+	"segure FOCO: nave lenta + ponto de acerto visível": "hold FOCUS: slow ship + visible hit point",
+	"toque em B para limpar a tela de balas": "tap B to clear the screen of bullets",
+	"raspar nas balas sem encostar dá pontos": "grazing bullets without touching them gives points",
+	"pegue para aumentar o poder de tiro": "grab it to boost your firepower",
+	"troca de arma enquanto cai: pegue na cor que quiser": "it cycles weapons as it falls: grab the color you want",
+	"a barra no topo mostra as fases; cada fase muda o ataque": "the top bar shows its phases; each phase changes the attack",
+	"créditos nunca se perdem: compre melhorias e tente de novo": "credits are never lost: buy upgrades and try again",
 }
 
 static var _registered := false

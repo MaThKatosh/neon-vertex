@@ -238,6 +238,8 @@ func hit() -> void:
 	main.fx.flash(Cfg.RED, 0.35)
 	main.bullets.cancel(position, 170.0, false)   # limpa a área: segunda chance justa
 	Sfx.play("player_hit")
+	if bombs > 0 and lives > 0:
+		main.tip("bomb")
 	if lives <= 0 and _revive_left > 0:
 		# Segunda Chance
 		_revive_left -= 1

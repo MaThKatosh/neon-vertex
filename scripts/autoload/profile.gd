@@ -13,7 +13,8 @@ var ng_selected := 0         # modo escolhido no Hangar
 var save_enabled := true     # os testes automáticos desligam
 
 # Opções (tela OPÇÕES). shake/flash: 1.0 normal, 0.5 reduzido, 0.0 desligado.
-var settings := {"lang": "", "music": 0.8, "sfx": 0.8, "shake": 1.0, "flash": 1.0, "fullscreen": false}
+var settings := {"lang": "", "music": 0.8, "sfx": 0.8, "shake": 1.0, "flash": 1.0, "fullscreen": false, "tips": true}
+var tips_seen := {}          # dicas do tutorial já mostradas (cada uma aparece uma vez)
 
 
 func _ready() -> void:
@@ -57,6 +58,7 @@ func load_profile() -> void:
 	start_weapon = str(cf.get_value("profile", "start_weapon", "spread"))
 	ng_cleared = int(cf.get_value("profile", "ng_cleared", -1))
 	ng_selected = clampi(int(cf.get_value("profile", "ng_selected", 0)), 0, ng_available())
+	tips_seen = cf.get_value("profile", "tips_seen", {})
 	var saved: Dictionary = cf.get_value("settings", "values", {})
 	for k in saved:
 		if settings.has(k):
@@ -79,6 +81,7 @@ func save_profile() -> void:
 	cf.set_value("profile", "ng_cleared", ng_cleared)
 	cf.set_value("profile", "ng_selected", ng_selected)
 	cf.set_value("settings", "values", settings)
+	cf.set_value("profile", "tips_seen", tips_seen)
 	cf.save(Cfg.SAVE_PATH)
 
 

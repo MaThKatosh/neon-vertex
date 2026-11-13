@@ -33,6 +33,8 @@ func _draw() -> void:
 			_hud()
 			if m.boss != null:
 				_boss_bar(m.boss)
+			if not m.tip_cur.is_empty():
+				_tip(m)
 			if m.banner != null:
 				_banner(m.banner)
 			if m.state == "playing" and Controls.is_touch:
@@ -510,6 +512,9 @@ func _options() -> void:
 			"flash":
 				label = "FLASHES DE TELA"
 				value = _level_name(float(s["flash"]))
+			"tips":
+				label = "DICAS DO TUTORIAL"
+				value = "LIGADO" if bool(s.get("tips", true)) else "DESLIGADO"
 			"fullscreen":
 				label = "TELA CHEIA"
 				value = "LIGADO" if bool(s["fullscreen"]) else "DESLIGADO"
@@ -535,3 +540,14 @@ func _level_name(v: float) -> String:
 	if v > 0.01:
 		return "REDUZIDO"
 	return "DESLIGADO"
+
+## Dica do tutorial: um cartão no alto da tela que aparece e some suavemente.
+func _tip(m) -> void:
+	var t_left: float = m.tip_t
+	var a := clampf(minf(t_left, 5.0 - t_left) / 0.3, 0.0, 1.0)
+	var y := 152.0
+	var r := Rect2(30, y - 26, Cfg.W - 60, 54)
+	draw_rect(r, Color(Cfg.BG, 0.85 * a))
+	_box(r, Color(Cfg.CYAN, a), 0.06 * a, 1.4)
+	Neon.text(self, m.tip_cur[0], Vector2(Cfg.W / 2.0, y - 10), 13, Color(Cfg.CYAN, a), HORIZONTAL_ALIGNMENT_CENTER, true)
+	Neon.text(self, m.tip_cur[1], Vector2(Cfg.W / 2.0, y + 12), 13, Color(1, 1, 1, a), HORIZONTAL_ALIGNMENT_CENTER, false)

@@ -66,6 +66,12 @@ var ctl_col := 0
 var opt_sel := 0
 var _menu_return := "title"   # para onde OPÇÕES/CONTROLES voltam ("title" ou "paused")
 
+# dicas do tutorial (veja tips.gd)
+var god_mode := false         # só para gravação de trailer/testes: balas não acertam o jogador
+var tip_cur: Array = []       # [título, texto] sendo mostrada
+var tip_t := 0.0
+var _tip_queue: Array = []
+
 var bg
 var items
 var hud
@@ -119,6 +125,15 @@ func _setup_glow() -> void:
 	env.glow_bloom = 0.05
 	env.glow_hdr_threshold = 0.85
 	env.glow_blend_mode = Environment.GLOW_BLEND_MODE_SCREEN
+	if OS.has_feature("web"):
+		# o navegador usa o renderizador de compatibilidade, sem HDR: as cores param em 1.0 e brilham menos.
+		# Baixa o limiar e aumenta a intensidade para o neon ficar parecido com o do PC.
+		env.glow_hdr_threshold = 0.55
+		env.glow_intensity = 1.35
+		env.glow_strength = 1.15
+		env.glow_bloom = 0.12
+		env.set_glow_level(0, 1.0)
+		env.set_glow_level(1, 1.0)
 	var we := WorldEnvironment.new()
 	we.environment = env
 	add_child(we)
@@ -201,6 +216,27 @@ func _on_title_menu(i: int) -> void:
 			_open_submenu("controls", "title")
 
 
+## Mostra uma dica do tutorial (só na primeira vez; dá para desligar nas Opções).
+func tip(key: String) -> void:
+	if not bool(Profile.settings.get("tips", true)) or Profile.tips_seen.has(key):
+		return
+	var tp := Tips.get_tip(key)
+	if tp.is_empty():
+		return
+	Profile.tips_seen[key] = true
+	Profile.save_profile()
+	_tip_queue.append(tp)
+
+
+func _update_tips(dt: float) -> void:
+	tip_t -= dt
+	if tip_t <= 0.0:
+		tip_cur = []
+		if not _tip_queue.is_empty():
+			tip_cur = _tip_queue.pop_front()
+			tip_t = 5.0
+
+
 ## Abre OPÇÕES ou CONTROLES lembrando de onde veio (menu inicial ou pausa).
 func _open_submenu(which: String, from: String) -> void:
 	_menu_return = from
@@ -235,6 +271,7 @@ func _update_playing(dt: float) -> void:
 	_cleanup_enemies()
 	items.step(dt)
 	fx.step(dt)
+	_update_tips(dt)
 	if banner != null:
 		banner["t"] += dt
 		if banner["t"] > banner["dur"]:
@@ -300,6 +337,10 @@ func _open_shop() -> void:
 	shop_sel = 0
 	shop_msg = ""
 	_set_state("shop")
+	if Profile.runs > 0 and bool(Profile.settings.get("tips", true)) and not Profile.tips_seen.has("hangar"):
+		Profile.tips_seen["hangar"] = true
+		_shop_say(Tips.get_tip("hangar")[1], Cfg.CYAN)
+		shop_msg_t = 6.0
 	Sfx.music("title")
 
 
@@ -387,7 +428,7 @@ func _on_pause_menu(i: int) -> void:
 
 ## Linhas: idioma, música, efeitos, tremor, flashes, [tela cheia no PC], voltar.
 func opt_rows() -> Array:
-	var rows := ["lang", "music", "sfx", "shake", "flash"]
+	var rows := ["lang", "music", "sfx", "shake", "flash", "tips"]
 	if Profile.can_fullscreen():
 		rows.append("fullscreen")
 	rows.append("back")
@@ -458,6 +499,10 @@ func _opt_adjust(row: String, dir: int) -> void:
 				fx.flash(Cfg.CYAN, 0.4)
 		"fullscreen":
 			s["fullscreen"] = not bool(s["fullscreen"])
+		"tips":
+			s["tips"] = not bool(s.get("tips", true))
+			if s["tips"]:
+				Profile.tips_seen = {}   # ligar de novo mostra todas as dicas outra vez
 		_:
 			return
 	Profile.apply_settings()
@@ -769,6 +814,9 @@ func _begin_stage(i: int) -> void:
 		sub = I18n.t(sub) + "  //  NG+%d" % loop
 	show_banner(stage["name"], sub, stage["color"], 2.6)
 	Sfx.music("stage", Sfx.tier_for(stage_idx, loop))
+	if i == 0:
+		after(3.0, tip.bind("move"))
+		after(11.0, tip.bind("focus"))
 
 
 func _clear_world() -> void:
@@ -813,6 +861,7 @@ func _update_director(dt: float) -> void:
 				boss.setup(self)
 				add_child(boss)
 				Sfx.music("boss", Sfx.tier_for(stage_idx, loop))
+				tip("boss")
 		"clear":
 			if pt > 4.0:
 				if stage_idx + 1 < Stages.ALL.size():
@@ -957,10 +1006,12 @@ func kill_enemy(e) -> void:
 	kills += 1
 	if e.kind == "turret" or kills % 14 == 0:
 		items.spawn(e.position, "P")
+		tip("item_p")
 	if kills % 70 == 0:
 		items.spawn(e.position, "B")
 	if kills % 30 == 0:
 		items.spawn(e.position, "W")
+		tip("item_w")
 
 
 func kill_all_enemies() -> void:
@@ -1053,7 +1104,7 @@ func _collide() -> void:
 		if boss == null:
 			boss_pts = []
 
-	if player.dead:
+	if player.dead or god_mode:
 		return
 	var pp := player.position
 	var hr := Cfg.HIT_RADIUS
@@ -1086,6 +1137,7 @@ func _collide() -> void:
 			if d2 < g * g:
 				b.grazed = true
 				player.on_graze()
+				tip("graze")
 				add_score(20)
 				fx.spark(b.pos, Cfg.WHITE, 2, 90.0, 0.2, 2.0)
 				Sfx.play("graze", -8.0)

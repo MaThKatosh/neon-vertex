@@ -149,6 +149,8 @@ func _physics_process(_dt: float) -> bool:
 				step = "boss"
 				wait = 0
 				boss_seen += 1
+				if boss_seen == 1:
+					_check(prof.tips_seen.has("move") and prof.tips_seen.has("focus") and prof.tips_seen.has("boss"), "dicas do tutorial não apareceram: %s" % str(prof.tips_seen.keys()))
 				var w: String = Cfg.WEAPONS[boss_seen % Cfg.WEAPONS.size()]
 				main.player.weapon = w
 				print("  chefe %d: %s  (arma: %s)" % [boss_seen, main.boss.boss_name, w])
