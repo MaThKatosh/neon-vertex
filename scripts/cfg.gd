@@ -41,14 +41,18 @@ const BOSS_RATE_SCALE := 0.8       # cadência de tiro dos chefes (menor = atira
 const BULLET_HITBOX := 0.7         # fração do raio da bala que acerta (o núcleo branco é desenhado desse tamanho)
 const BOMBS_PER_STAGE := 2         # todo setor começa com pelo menos essa quantidade de bombas
 
-# Armas do jogador (trocadas pelo item W, que alterna de cor enquanto cai)
-const WEAPONS := ["spread", "laser", "homing"]
-const WEAPON_NAMES := {"spread": "LEQUE", "laser": "LASER", "homing": "ENXAME"}
-const WEAPON_LETTER := {"spread": "S", "laser": "L", "homing": "H"}
+# Armas do jogador. As 3 primeiras são básicas; Prisma, Pulso e Vertex são exclusivas do NEW GAME +.
+# O item W alterna entre as armas que você possui enquanto cai.
+const WEAPONS := ["spread", "laser", "homing", "prism", "pulse", "vertex"]
+const WEAPON_NAMES := {"spread": "LEQUE", "laser": "LASER", "homing": "ENXAME", "prism": "PRISMA", "pulse": "PULSO", "vertex": "VERTEX"}
+const WEAPON_LETTER := {"spread": "S", "laser": "L", "homing": "H", "prism": "R", "pulse": "O", "vertex": "X"}
 const WEAPON_COLORS := {
 	"spread": Color(0.0, 0.94, 1.0),
 	"laser": Color(0.49, 0.78, 1.0),
 	"homing": Color(0.36, 1.0, 0.69),
+	"prism": Color(0.85, 0.65, 1.0),
+	"pulse": Color(0.55, 1.0, 0.95),
+	"vertex": Color(1.0, 1.0, 1.0),
 }
 
 # Créditos (moeda da loja). Ficam salvos entre partidas.
@@ -56,23 +60,44 @@ const CREDITS := {"diamond": 1, "gunner": 3, "dart": 2, "orb": 1, "turret": 8}
 const BOSS_CREDITS := 40           # + 20 por setor
 const CLEAR_BONUS := 1000          # zerar os 10 setores
 
-# Loja (Hangar). `costs` = preço de cada nível; o número de preços é o nível máximo.
+# NEW GAME +: zerar o jogo libera o NG+1, zerar o NG+1 libera o NG+2... até o NG+10.
+const NG_MAX := 10
+
+# Loja (Hangar). `costs` = preço de cada nível (o número de preços é o nível máximo).
+# `tab` = aba da loja. `req` = nível de NG que precisa ser concluído para liberar (0 = zerar o modo normal).
+const SHOP_TABS := [["nave", "NAVE"], ["armas", "ARMAS"], ["elite", "ELITE"]]
 const UPGRADES := [
-	{"id": "hearts", "name": "CORAÇÕES", "desc": "+1 coração máximo (e no início da partida)", "costs": [150, 400]},
-	{"id": "bombs", "name": "BOMBAS", "desc": "+1 bomba no início e em cada setor", "costs": [80, 180, 350]},
-	{"id": "power", "name": "PODER INICIAL", "desc": "Começa a partida com mais poder de tiro", "costs": [120, 300, 600]},
-	{"id": "damage", "name": "DANO", "desc": "+12% de dano em todos os tiros", "costs": [100, 200, 350, 550, 800]},
-	{"id": "rate", "name": "CADÊNCIA", "desc": "+8% de velocidade de disparo", "costs": [100, 220, 400, 650]},
-	{"id": "magnet", "name": "ÍMÃ", "desc": "Puxa itens de mais longe", "costs": [60, 140, 260]},
-	{"id": "invuln", "name": "RECUPERAÇÃO", "desc": "+0,4 s de invulnerabilidade após levar dano", "costs": [80, 180, 320]},
-	{"id": "shield", "name": "ESCUDO", "desc": "Absorve 1 acerto por setor (por nível), sem perder coração", "costs": [250, 550, 1000]},
-	{"id": "drones", "name": "DRONES", "desc": "Nv1: 1 drone · Nv2: 2 drones · Nv3: drones mais fortes", "costs": [300, 700, 1200]},
-	{"id": "laser", "name": "ARMA: LASER", "desc": "Libera começar a partida com o Laser", "costs": [400]},
-	{"id": "homing", "name": "ARMA: ENXAME", "desc": "Libera começar a partida com o Enxame", "costs": [400]},
+	{"id": "hearts", "tab": "nave", "icon": "heart", "name": "CORAÇÕES", "desc": "+1 coração máximo e no início", "costs": [150, 400]},
+	{"id": "shield", "tab": "nave", "icon": "shield", "name": "ESCUDO", "desc": "Absorve 1 acerto por setor (por nível)", "costs": [250, 550, 1000]},
+	{"id": "bombs", "tab": "nave", "icon": "bomb", "name": "BOMBAS", "desc": "+1 bomba no início e em cada setor", "costs": [80, 180, 350]},
+	{"id": "invuln", "tab": "nave", "icon": "clock", "name": "RECUPERAÇÃO", "desc": "+0,4 s invulnerável após dano", "costs": [80, 180, 320]},
+	{"id": "magnet", "tab": "nave", "icon": "magnet", "name": "ÍMÃ", "desc": "Puxa itens de mais longe", "costs": [60, 140, 260]},
+	{"id": "power", "tab": "armas", "icon": "power", "name": "PODER INICIAL", "desc": "Começa com mais poder de tiro", "costs": [120, 300, 600]},
+	{"id": "damage", "tab": "armas", "icon": "damage", "name": "DANO", "desc": "+12% de dano em todos os tiros", "costs": [100, 200, 350, 550, 800]},
+	{"id": "rate", "tab": "armas", "icon": "rate", "name": "CADÊNCIA", "desc": "+8% de velocidade de disparo", "costs": [100, 220, 400, 650]},
+	{"id": "drones", "tab": "armas", "icon": "drones", "name": "DRONES", "desc": "1 drone · 2 drones · drones fortes", "costs": [300, 700, 1200]},
+	{"id": "laser", "tab": "armas", "icon": "w:laser", "name": "ARMA: LASER", "desc": "Liberar para começar com o Laser", "costs": [400]},
+	{"id": "homing", "tab": "armas", "icon": "w:homing", "name": "ARMA: ENXAME", "desc": "Liberar para começar com o Enxame", "costs": [400]},
+	{"id": "prism", "tab": "elite", "req": 0, "icon": "w:prism", "name": "ARMA: PRISMA", "desc": "Tiros que se dividem em 3", "costs": [800]},
+	{"id": "collector", "tab": "elite", "req": 1, "icon": "coin", "name": "COLETOR", "desc": "+50% de créditos em toda partida", "costs": [1000]},
+	{"id": "pulse", "tab": "elite", "req": 2, "icon": "w:pulse", "name": "ARMA: PULSO", "desc": "Ondas largas que atravessam tudo", "costs": [1200]},
+	{"id": "revive", "tab": "elite", "req": 3, "icon": "revive", "name": "SEGUNDA CHANCE", "desc": "1x por partida, volta com 2 corações", "costs": [1500]},
+	{"id": "regen", "tab": "elite", "req": 4, "icon": "shield", "name": "ESCUDO VIVO", "desc": "Recupera 1 escudo a cada 25 s", "costs": [1500]},
+	{"id": "nova", "tab": "elite", "req": 5, "icon": "bomb", "name": "BOMBA NOVA", "desc": "Bombas com 3x dano e mais longas", "costs": [1800]},
+	{"id": "drone3", "tab": "elite", "req": 6, "icon": "drones", "name": "TERCEIRO DRONE", "desc": "Um drone extra atrás da nave", "costs": [2000]},
+	{"id": "vampire", "tab": "elite", "req": 7, "icon": "heart", "name": "GRAZE VAMPÍRICO", "desc": "120 raspões = +1 coração", "costs": [2200]},
+	{"id": "stable", "tab": "elite", "req": 8, "icon": "power", "name": "NÚCLEO ESTÁVEL", "desc": "Não perde poder ao levar dano", "costs": [2500]},
+	{"id": "overdrive", "tab": "elite", "req": 9, "icon": "damage", "name": "SOBRECARGA", "desc": "+30% de dano em tudo", "costs": [3000]},
+	{"id": "vertex", "tab": "elite", "req": 10, "icon": "w:vertex", "name": "ARMA: VERTEX", "desc": "Leque + laser + enxame juntos", "costs": [5000]},
 ]
 
-# Layout da loja (usado pelo main.gd e pelo hud.gd)
-const SHOP_Y0 := 176.0
-const SHOP_ROW_H := 50.0
+# Layout do Hangar (usado pelo main.gd e pelo hud.gd)
+const SHOP_TAB_Y := 166.0
+const SHOP_LIST_Y0 := 240.0        # centro do primeiro cartão
+const SHOP_CARD_H := 80.0
+const SHOP_VISIBLE := 6
+const SHOP_WEAPON_Y := 744.0
+const SHOP_NG_Y := 796.0
+const SHOP_START_Y := 868.0
 
 const SAVE_PATH := "user://save.cfg"

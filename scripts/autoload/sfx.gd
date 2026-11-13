@@ -15,7 +15,9 @@ var _next := 0
 var _music: AudioStreamPlayer
 var _mode := ""
 var _last := {}
-var _b := PackedFloat32Array()   # buffer de trabalho da síntese
+var _b := PackedFloat32Array()   # buffer de trabalho da síntese dos efeitos
+var _thread: Thread
+var _tier := 0
 
 
 func _ready() -> void:
@@ -28,8 +30,14 @@ func _ready() -> void:
 	_music.volume_db = -7.0
 	add_child(_music)
 	_build_sfx()
-	for m in ["title", "stage", "boss"]:
-		tracks[m] = _build_track(m)
+	# a música fica mais frenética a cada par de setores: 5 níveis de intensidade (0..4).
+	# Gera na hora só o que o começo do jogo usa; o resto é gerado numa thread em segundo plano.
+	var s := Synth.new()
+	tracks["title"] = _build_track(s, "title", 0)
+	tracks["stage0"] = _build_track(s, "stage", 0)
+	tracks["boss0"] = _build_track(s, "boss", 0)
+	_thread = Thread.new()
+	_thread.start(_build_rest)
 	var cf := ConfigFile.new()
 	if cf.load(Cfg.SAVE_PATH) == OK:
 		muted = bool(cf.get_value("audio", "muted", false))
@@ -51,16 +59,49 @@ func play(sound: String, vol_db := 0.0) -> void:
 	p.play()
 
 
-## "title", "stage", "boss" ou "silence".
-func music(mode: String) -> void:
-	if mode == _mode:
+## Nível de intensidade da música para um setor (0 = setores 1-2 ... 4 = setores 9-10).
+## Do NG+3 em diante a trilha já começa um nível acima.
+static func tier_for(stage_idx: int, ng: int) -> int:
+	return clampi(int(stage_idx / 2.0) + (1 if ng >= 3 else 0), 0, 4)
+
+
+## "title", "stage", "boss" ou "silence". `tier` escolhe a intensidade (0..4).
+func music(mode: String, tier := 0) -> void:
+	var key := mode
+	if mode == "stage" or mode == "boss":
+		# se a versão pedida ainda está sendo gerada, usa a mais intensa já pronta
+		var k := tier
+		while k > 0 and not tracks.has("%s%d" % [mode, k]):
+			k -= 1
+		key = "%s%d" % [mode, k]
+	if key == _mode:
 		return
-	_mode = mode
-	if tracks.has(mode):
-		_music.stream = tracks[mode]
+	_mode = key
+	if tracks.has(key):
+		_music.stream = tracks[key]
 		_music.play()
 	else:
 		_music.stop()
+
+
+func _build_rest() -> void:
+	var s := Synth.new()
+	var done := {}
+	for k in range(1, 5):
+		done["stage%d" % k] = _build_track(s, "stage", k)
+		done["boss%d" % k] = _build_track(s, "boss", k)
+	_on_rest_ready.call_deferred(done)
+
+
+func _on_rest_ready(done: Dictionary) -> void:
+	_thread.wait_to_finish()
+	for key in done:
+		tracks[key] = done[key]
+
+
+func _exit_tree() -> void:
+	if _thread != null and _thread.is_started():
+		_thread.wait_to_finish()
 
 
 func toggle_mute() -> void:
@@ -188,37 +229,67 @@ const BASS := [1.0, 0.0, 1.0, 2.0, 1.0, 0.0, 1.0, 1.0, 1.0, 0.0, 2.0, 1.0, 1.0, 
 const ARP := [1.0, 1.19, 1.5, 2.0]         # tônica, terça menor, quinta, oitava
 
 
+const LEAD := [1.0, 1.5, 1.19, 2.0, 1.78, 1.5]
+
+
 ## Gera um loop de 4 compassos (64 semicolcheias) no estilo synthwave.
-func _build_track(mode: String) -> AudioStreamWAV:
-	var bpm := 140.0 if mode == "boss" else 124.0
+## `k` = intensidade 0..4. Cada nível acelera o andamento e acrescenta camadas:
+##   1: chimbal no contratempo · 2: arpejo em semicolcheias + caixa fantasma
+##   3: bumbo sincopado + baixo com oitavas · 4: lead serrilhado + virada de caixa + sobe um tom
+## O chefe toca sempre um nível acima do setor (até 5).
+func _build_track(s: Synth, mode: String, k: int) -> AudioStreamWAV:
+	var boss := mode == "boss"
+	var lvl := k + (1 if boss else 0)
+	var bpm := 118.0 if mode == "title" else 120.0 + 9.0 * k + (12.0 if boss else 0.0)
 	var spb := 60.0 / bpm / 4.0
-	_new_buf(spb * 64.0)
-	for s in 64:
-		var t := s * spb
-		var bar := int(s / 16.0)
-		var st := s % 16
-		var root: float = PROG[bar]
+	var shift := pow(2.0, 2.0 / 12.0) if k >= 4 else 1.0
+	s.start(spb * 64.0)
+	for n in 64:
+		var t := n * spb
+		var bar := int(n / 16.0)
+		var st := n % 16
+		var root: float = PROG[bar] * shift
 		var bm: float = BASS[st]
-		var arp: float = ARP[int(st / 2.0) % 4]
 		if mode == "title":
+			var arp_t: float = ARP[int(st / 2.0) % 4]
 			if st % 2 == 0 and bm > 0.0:
-				_tone(t, 0.22, root * 2.0 * bm, 0.0, 0.16, 2, 600.0)
+				s.tone(t, 0.22, root * 2.0 * bm, 0.0, 0.16, 2, 600.0)
 			if st % 2 == 1:
-				_tone(t, 0.25, root * 8.0 * arp, 0.0, 0.07, 3, 2500.0)
+				s.tone(t, 0.25, root * 8.0 * arp_t, 0.0, 0.07, 3, 2500.0)
 			continue
+		# bateria
 		if st % 4 == 0:
-			_tone(t, 0.16, 150.0, 42.0, 0.7, 0)                 # bumbo
+			s.tone(t, 0.16, 150.0, 42.0, 0.7, 0)                           # bumbo
+		if lvl >= 3 and (st == 10 or (st == 14 and bar % 2 == 1)):
+			s.tone(t, 0.12, 140.0, 45.0, 0.45, 0)                          # bumbo extra
 		if st % 4 == 2:
-			_noise(t, 0.04, 0.12, 6000.0, 6000.0, true)         # chimbal
-		if mode == "boss" and st % 2 == 1:
-			_noise(t, 0.03, 0.07, 7000.0, 7000.0, true)
+			s.noise(t, 0.05, 0.13, 6000.0, 6000.0, true)                   # chimbal aberto
+		if lvl >= 1 and st % 2 == 1:
+			s.noise(t, 0.025, 0.07, 7000.0, 7000.0, true)                  # chimbal fechado
+		if lvl >= 4 and st % 2 == 0 and st % 4 != 2:
+			s.noise(t, 0.02, 0.05, 8000.0, 8000.0, true)
 		if st % 8 == 4:
-			_noise(t, 0.14, 0.3, 2200.0, 900.0)                 # caixa
+			s.noise(t, 0.14, 0.3, 2200.0, 900.0)                           # caixa
+		if lvl >= 2 and st == 15:
+			s.noise(t, 0.06, 0.12, 2400.0, 1200.0)                         # caixa fantasma
+		if lvl >= 4 and bar == 3 and st >= 12:
+			s.noise(t, 0.07, 0.12 + 0.05 * (st - 12), 2600.0, 1200.0)      # virada
+		# baixo: o filtro abre conforme a intensidade
+		var cut := 650.0 + 170.0 * lvl
 		if bm > 0.0:
-			_tone(t, 0.12, root * 2.0 * bm, 0.0, 0.22, 2, 1100.0 if mode == "boss" else 750.0)
-		if (mode == "boss" or bar >= 2) and st % 2 == 0:
-			_tone(t, 0.09, root * 8.0 * arp, 0.0, 0.06, 1, 3000.0)
-	return _wav(true)
+			s.tone(t, 0.12, root * 2.0 * bm, 0.0, 0.22, 2, cut)
+		elif lvl >= 3:
+			s.tone(t, 0.08, root * 4.0, 0.0, 0.12, 2, cut)
+		# arpejo
+		var every := 1 if lvl >= 2 else 2
+		if (lvl >= 1 or bar >= 2) and st % every == 0:
+			var arp: float = ARP[(st if lvl >= 2 else int(st / 2.0)) % 4]
+			s.tone(t, 0.08, root * 8.0 * arp, 0.0, 0.05, 1, 2600.0 + 300.0 * lvl)
+		# lead
+		if lvl >= 4 and bar >= 2 and (st == 0 or st == 3 or st == 6 or st == 10 or st == 12):
+			var ld: float = LEAD[(st + bar) % LEAD.size()]
+			s.tone(t, 0.18, root * 4.0 * ld, 0.0, 0.07, 2, 3200.0)
+	return s.wav(true)
 
 
 # ------------------------------------------------------------------ síntese

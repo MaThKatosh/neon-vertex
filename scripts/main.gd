@@ -3,7 +3,8 @@ extends Node2D
 ## Cena principal: monta o mundo, roda a máquina de estados do jogo, o "diretor" das fases,
 ## as colisões, a pontuação e os créditos. Tudo é atualizado aqui em ordem fixa, a 60 passos por segundo.
 ##
-## Estados: title -> shop (Hangar) -> playing <-> paused -> gameover / victory -> shop ...
+## Estados: title (menu) -> shop (Hangar) -> playing <-> paused -> gameover / victory -> shop ...
+##          title -> controls (tela de controles)
 ## Fases de um setor: intro -> waves -> warning -> boss -> clear
 ## Campanha roguelite: toda partida começa no setor 1; os créditos ganhos compram upgrades permanentes.
 
@@ -19,17 +20,13 @@ const BOSS_SCRIPTS := {
 	"tesseract": preload("res://scripts/bosses/boss_tesseract.gd"),
 	"chaos": preload("res://scripts/bosses/boss_chaos.gd"),
 }
-const TOUCH_BUTTONS := [
-	{"pos": Vector2(270, 34), "r": 34.0, "action": "pause"},
-	{"pos": Vector2(474, 874), "r": 54.0, "action": "bomb"},
-]
 
 var state := "title"
 var state_t := 0.0
 var t := 0.0
 var score := 0
 var new_hi := false
-var loop := 0                 # ciclo (cada volta completa fica mais difícil)
+var loop := 0                 # nível de NEW GAME + desta partida (0 = normal, até 10)
 var hp_mul := 1.0
 var rate_mul := 1.0
 var enemy_hp_mul := 1.0       # cresce a cada setor
@@ -54,9 +51,16 @@ var _banked := 0
 var summary: Array = []       # linhas da tela de fim de partida
 
 # loja
+var shop_tab := 0
 var shop_sel := 0
+var shop_scroll := 0
 var shop_msg := ""
 var shop_msg_t := 0.0
+var _shop_drag := 0.0
+
+# tela de controles
+var ctl_sel := 0
+var ctl_col := 0
 
 var bg
 var items
@@ -130,11 +134,13 @@ func _physics_process(dt: float) -> void:
 	state_t += dt
 	if Controls.pressed("mute"):
 		Sfx.toggle_mute()
-	Controls.buttons = TOUCH_BUTTONS if (state == "playing" and Controls.is_touch) else []
+	Controls.buttons = Controls.touch_layout() if (state == "playing" and Controls.is_touch) else []
 
 	match state:
 		"title":
 			_update_title(dt)
+		"controls":
+			_update_controls(dt)
 		"shop":
 			_update_shop(dt)
 		"playing":
@@ -159,7 +165,8 @@ func _physics_process(dt: float) -> void:
 			bg.step(dt)
 			fx.step(dt)
 			if state_t > 1.2:
-				_menu(["NOVO CICLO (MAIS DIFÍCIL)", "HANGAR (LOJA)"], _on_victory_menu)
+				var next_ng := mini(loop + 1, Cfg.NG_MAX)
+				_menu(["SEGUIR PARA %s" % Profile.ng_label(next_ng), "HANGAR (LOJA)"], _on_victory_menu)
 
 	cam.offset = Vector2(randf_range(-1.0, 1.0), randf_range(-1.0, 1.0)) * fx.shake if fx.shake > 0.1 else Vector2.ZERO
 	hud.queue_redraw()
@@ -174,9 +181,17 @@ func _update_title(dt: float) -> void:
 		var y := Cfg.H * 0.5 + sin(t * 2.0) * 6.0 + 20.0
 		fx.emit(Vector2(Cfg.W / 2.0 + randf_range(-3.0, 3.0), y), Vector2(randf_range(-20.0, 20.0), randf_range(160.0, 260.0)), Cfg.MAGENTA, 0.3, 3.0)
 	fx.step(dt)
-	if state_t > 0.3 and (Controls.pressed("confirm") or Controls.taps.size() > 0):
-		Sfx.play("select")
+	if state_t > 0.3:
+		_menu(["JOGAR", "CONTROLES"], _on_title_menu)
+
+
+func _on_title_menu(i: int) -> void:
+	if i == 0:
 		_open_shop()
+	else:
+		ctl_sel = 0
+		ctl_col = 0
+		_set_state("controls")
 
 
 func _update_playing(dt: float) -> void:
@@ -218,7 +233,7 @@ func _set_state(s: String) -> void:
 
 func _new_game() -> void:
 	score = 0
-	loop = 0
+	loop = clampi(Profile.ng_selected, 0, Profile.ng_available())
 	kills = 0
 	dead_t = 0.0
 	new_hi = false
@@ -232,8 +247,10 @@ func _new_game() -> void:
 	_set_state("playing")
 
 
+## Vitória -> segue direto para o próximo NG mantendo vidas, poder e arma (recompensa pela sequência).
 func _next_loop() -> void:
-	loop += 1
+	loop = mini(loop + 1, Cfg.NG_MAX)
+	Profile.ng_selected = loop
 	_banked = 0
 	run_credits = 0
 	_set_difficulty()
@@ -265,8 +282,11 @@ func _open_shop() -> void:
 
 ## Fim da partida (morte ou vitória): deposita créditos e monta o resumo.
 func _end_run(won: bool) -> void:
+	var unlocked: Array = []
+	var prev_avail := Profile.ng_available()
 	if won:
 		add_credits(Cfg.CLEAR_BONUS)
+		unlocked = Profile.clear_ng(loop)
 	_bank()
 	Profile.best_stage = maxi(Profile.best_stage, stage_idx + 1)
 	if score > Profile.hi:
@@ -274,11 +294,16 @@ func _end_run(won: bool) -> void:
 		new_hi = true
 	Profile.save_profile()
 	summary = [
+		"MODO  %s" % Profile.ng_label(loop),
 		"PONTOS  %d" % score,
 		"NOVO RECORDE!" if new_hi else "RECORDE  %d" % Profile.hi,
 		"SETOR ALCANÇADO  %d / %d" % [stage_idx + 1, Stages.ALL.size()],
 		"CRÉDITOS GANHOS  +%d" % run_credits,
 	]
+	for id in unlocked:
+		summary.append("LIBERADO NA ABA ELITE: %s" % Profile.upgrade_def(id)["name"])
+	if won and Profile.ng_available() > prev_avail:
+		summary.append("LIBERADO: %s" % Profile.ng_label(loop + 1))
 	if won:
 		_set_state("victory")
 		Sfx.music("title")
@@ -288,14 +313,17 @@ func _end_run(won: bool) -> void:
 		Sfx.play("game_over")
 
 
+## Dificuldade do NEW GAME +: no NG+10 os inimigos têm 3,5x de vida, atiram 2x mais e as balas são 60% mais rápidas.
 func _set_difficulty() -> void:
-	hp_mul = 1.0 + loop * 0.35
-	rate_mul = 1.0 + loop * 0.25
-	bullets.speed_mul = 1.0 + loop * 0.15
+	hp_mul = 1.0 + loop * 0.25
+	rate_mul = 1.0 + loop * 0.1
+	bullets.speed_mul = 1.0 + loop * 0.06
 
 
 func menu_y(i: int) -> float:
-	return Cfg.H * 0.62 + i * 62.0
+	if state == "title":
+		return Cfg.H * 0.6 + i * 64.0
+	return Cfg.H * 0.66 + i * 62.0
 
 
 func _menu(opts: Array, cb: Callable) -> void:
@@ -342,17 +370,41 @@ func _on_victory_menu(i: int) -> void:
 
 
 # ------------------------------------------------------------------ Hangar (loja)
+# Navegação: cima/baixo percorre os cartões e depois [arma, modo, iniciar].
+# Nos cartões, esquerda/direita troca de aba; nos seletores, troca o valor.
 
-## Linhas da loja: [INICIAR, ARMA INICIAL, upgrades...]
-func shop_rows() -> Array:
-	var rows: Array = [{"type": "start"}, {"type": "weapon"}]
+func shop_cards() -> Array:
+	var tab: String = Cfg.SHOP_TABS[shop_tab][0]
+	var out := []
 	for u in Cfg.UPGRADES:
-		rows.append({"type": "up", "id": u["id"]})
-	return rows
+		if u["tab"] == tab:
+			out.append(u["id"])
+	return out
 
 
-func shop_row_y(i: int) -> float:
-	return Cfg.SHOP_Y0 + i * Cfg.SHOP_ROW_H
+func shop_card_y(i: int) -> float:
+	return Cfg.SHOP_LIST_Y0 + (i - shop_scroll) * Cfg.SHOP_CARD_H
+
+
+func shop_tab_x(k: int) -> float:
+	return Cfg.W / 2.0 + (k - 1) * 166.0
+
+
+func _shop_fix_scroll() -> void:
+	var n := shop_cards().size()
+	if shop_sel < n:
+		if shop_sel < shop_scroll:
+			shop_scroll = shop_sel
+		elif shop_sel >= shop_scroll + Cfg.SHOP_VISIBLE:
+			shop_scroll = shop_sel - Cfg.SHOP_VISIBLE + 1
+	shop_scroll = clampi(shop_scroll, 0, maxi(0, n - Cfg.SHOP_VISIBLE))
+
+
+func _shop_set_tab(k: int) -> void:
+	shop_tab = (k + Cfg.SHOP_TABS.size()) % Cfg.SHOP_TABS.size()
+	shop_sel = 0
+	shop_scroll = 0
+	Sfx.play("tick")
 
 
 func _update_shop(dt: float) -> void:
@@ -360,69 +412,224 @@ func _update_shop(dt: float) -> void:
 	bg.step(dt)
 	fx.step(dt)
 	shop_msg_t = maxf(0.0, shop_msg_t - dt)
-	var rows := shop_rows()
-	var n := rows.size()
+	var n := shop_cards().size()
+	var total := n + 3
 	if Controls.pressed("up"):
-		shop_sel = (shop_sel + n - 1) % n
+		shop_sel = (shop_sel + total - 1) % total
 		Sfx.play("tick")
 	if Controls.pressed("down"):
-		shop_sel = (shop_sel + 1) % n
+		shop_sel = (shop_sel + 1) % total
 		Sfx.play("tick")
-	if rows[shop_sel]["type"] == "weapon" and (Controls.pressed("left") or Controls.pressed("right")):
-		_shop_activate(shop_sel)
+	var dir := 0
+	if Controls.pressed("left"):
+		dir = -1
+	elif Controls.pressed("right"):
+		dir = 1
+	if dir != 0:
+		if shop_sel < n:
+			_shop_set_tab(shop_tab + dir)
+			n = shop_cards().size()
+		elif shop_sel == n:
+			Profile.cycle_start_weapon(dir)
+			Sfx.play("tick")
+		elif shop_sel == n + 1:
+			Profile.cycle_ng(dir)
+			Sfx.play("tick")
+	_shop_fix_scroll()
 	if Controls.pressed("confirm"):
 		_shop_activate(shop_sel)
 		return
 	if Controls.pressed("pause") and state_t > 0.2:
 		_to_title()
 		return
-	# toque: 1º toque seleciona, 2º compra (INICIAR e ARMA respondem no 1º toque)
-	for tp in Controls.taps:
-		var idx := int(floor((tp.y - Cfg.SHOP_Y0 + Cfg.SHOP_ROW_H * 0.5) / Cfg.SHOP_ROW_H))
-		if idx < 0 or idx >= n or absf(tp.x - Cfg.W / 2.0) > 250.0:
-			continue
-		if idx == shop_sel or rows[idx]["type"] != "up":
-			shop_sel = idx
-			_shop_activate(idx)
-		else:
-			shop_sel = idx
-			Sfx.play("tick")
-		return
+	# arrastar o dedo rola a lista
+	_shop_drag += Controls.drag.y
+	if absf(_shop_drag) > Cfg.SHOP_CARD_H * 0.6:
+		shop_scroll = clampi(shop_scroll - int(signf(_shop_drag)), 0, maxi(0, n - Cfg.SHOP_VISIBLE))
+		_shop_drag = 0.0
+	if Controls.taps.size() > 0:
+		_shop_tap(Controls.taps[0])
+
+
+func _shop_tap(p: Vector2) -> void:
+	var n := shop_cards().size()
+	# abas
+	if absf(p.y - Cfg.SHOP_TAB_Y) < 24.0:
+		for k in Cfg.SHOP_TABS.size():
+			if absf(p.x - shop_tab_x(k)) < 80.0:
+				_shop_set_tab(k)
+				return
+	# cartões: toque no preço compra; toque no cartão seleciona (2º toque compra)
+	for i in range(shop_scroll, mini(n, shop_scroll + Cfg.SHOP_VISIBLE)):
+		if absf(p.y - shop_card_y(i)) < Cfg.SHOP_CARD_H * 0.5 - 3.0:
+			var on_price := p.x > Cfg.W - 140.0
+			if on_price or i == shop_sel:
+				shop_sel = i
+				_shop_activate(i)
+			else:
+				shop_sel = i
+				Sfx.play("tick")
+			return
+	# seletores: metade esquerda volta, metade direita avança
+	var d := -1 if p.x < Cfg.W / 2.0 else 1
+	if absf(p.y - Cfg.SHOP_WEAPON_Y) < 24.0:
+		shop_sel = n
+		Profile.cycle_start_weapon(d)
+		Sfx.play("tick")
+	elif absf(p.y - Cfg.SHOP_NG_Y) < 24.0:
+		shop_sel = n + 1
+		Profile.cycle_ng(d)
+		Sfx.play("tick")
+	elif absf(p.y - Cfg.SHOP_START_Y) < 34.0:
+		shop_sel = n + 2
+		_shop_activate(n + 2)
 
 
 func _shop_activate(i: int) -> void:
-	var row: Dictionary = shop_rows()[i]
-	match row["type"]:
-		"start":
-			Sfx.play("select")
-			_new_game()
-		"weapon":
-			Profile.cycle_start_weapon()
-			Sfx.play("tick")
-		"up":
-			var id: String = row["id"]
-			match Profile.buy(id):
-				"ok":
-					Sfx.play("coin")
-					fx.spark(Vector2(Cfg.W - 70.0, shop_row_y(i)), Cfg.YELLOW, 14, 220.0)
-					_shop_say("COMPRADO: %s NV %d" % [Profile.upgrade_def(id)["name"], Profile.level(id)])
-				"max":
-					Sfx.play("deny")
-					_shop_say("NÍVEL MÁXIMO")
-				_:
-					Sfx.play("deny")
-					_shop_say("CRÉDITOS INSUFICIENTES")
+	var cards := shop_cards()
+	var n := cards.size()
+	if i < n:
+		var id: String = cards[i]
+		match Profile.buy(id):
+			"ok":
+				Sfx.play("coin")
+				fx.spark(Vector2(Cfg.W - 80.0, shop_card_y(i)), Cfg.YELLOW, 16, 240.0)
+				fx.ring(Vector2(Cfg.W - 80.0, shop_card_y(i)), Cfg.YELLOW, 50.0, 0.3, 2.0)
+				_shop_say("COMPRADO: %s NV %d" % [Profile.upgrade_def(id)["name"], Profile.level(id)], Cfg.LIME)
+			"max":
+				Sfx.play("deny")
+				_shop_say("NÍVEL MÁXIMO", Cfg.WHITE)
+			"locked":
+				Sfx.play("deny")
+				_shop_say("BLOQUEADO: %s" % Profile.req_text(id), Cfg.PURPLE)
+			_:
+				Sfx.play("deny")
+				_shop_say("CRÉDITOS INSUFICIENTES", Cfg.RED)
+	elif i == n:
+		Profile.cycle_start_weapon(1)
+		Sfx.play("tick")
+	elif i == n + 1:
+		Profile.cycle_ng(1)
+		Sfx.play("tick")
+	else:
+		Sfx.play("select")
+		_new_game()
 
 
-func _shop_say(msg: String) -> void:
+var shop_msg_col := Cfg.YELLOW
+
+
+func _shop_say(msg: String, col: Color) -> void:
 	shop_msg = msg
+	shop_msg_col = col
 	shop_msg_t = 2.0
+
+
+# ------------------------------------------------------------------ tela de controles
+
+## Linhas: as 9 ações (3 colunas: tecla 1, tecla 2, controle) + ajustes de toque + restaurar + voltar.
+func ctl_rows() -> Array:
+	var rows: Array = []
+	for a in Controls.ACTIONS:
+		rows.append({"type": "action", "id": a})
+	rows.append({"type": "sens"})
+	rows.append({"type": "side"})
+	rows.append({"type": "focusbtn"})
+	rows.append({"type": "reset"})
+	rows.append({"type": "back"})
+	return rows
+
+
+func ctl_row_y(i: int) -> float:
+	var extra := 16.0 if i >= Controls.ACTIONS.size() else 0.0   # espaço antes da seção de toque
+	return 146.0 + i * 42.0 + extra
+
+
+func ctl_col_x(c: int) -> float:
+	return 262.0 + c * 92.0
+
+
+func _update_controls(dt: float) -> void:
+	bg.speed = 0.3
+	bg.step(dt)
+	fx.step(dt)
+	if Controls.capturing != "" or Controls.capture_cool > 0.0:
+		return
+	var rows := ctl_rows()
+	var n := rows.size()
+	if Controls.pressed("up"):
+		ctl_sel = (ctl_sel + n - 1) % n
+		Sfx.play("tick")
+	if Controls.pressed("down"):
+		ctl_sel = (ctl_sel + 1) % n
+		Sfx.play("tick")
+	var dir := 0
+	if Controls.pressed("left"):
+		dir = -1
+	elif Controls.pressed("right"):
+		dir = 1
+	if dir != 0:
+		if rows[ctl_sel]["type"] == "action":
+			ctl_col = (ctl_col + dir + 3) % 3
+			Sfx.play("tick")
+		else:
+			_ctl_adjust(rows[ctl_sel]["type"], dir)
+	if Controls.pressed("confirm"):
+		_ctl_activate(ctl_sel, ctl_col)
+		return
+	if Controls.pressed("pause") and state_t > 0.2:
+		_to_title()
+		return
+	for tp in Controls.taps:
+		for i in n:
+			if absf(tp.y - ctl_row_y(i)) < 19.0:
+				ctl_sel = i
+				var rt: String = rows[i]["type"]
+				if rt == "action":
+					for c in 3:
+						if absf(tp.x - ctl_col_x(c)) < 44.0:
+							ctl_col = c
+							_ctl_activate(i, c)
+				elif rt == "sens" or rt == "side" or rt == "focusbtn":
+					_ctl_adjust(rt, -1 if tp.x < Cfg.W - 100.0 else 1)
+				else:
+					_ctl_activate(i, 0)
+				return
+
+
+func _ctl_adjust(t: String, dir: int) -> void:
+	match t:
+		"sens":
+			Controls.touch_sens = clampf(snappedf(Controls.touch_sens + 0.1 * dir, 0.05), 0.6, 2.5)
+		"side":
+			Controls.touch_left = not Controls.touch_left
+		"focusbtn":
+			Controls.touch_focus_btn = not Controls.touch_focus_btn
+	Controls.save_settings()
+	Sfx.play("tick")
+
+
+func _ctl_activate(i: int, col: int) -> void:
+	var row: Dictionary = ctl_rows()[i]
+	match row["type"]:
+		"action":
+			Controls.start_capture(row["id"], col)
+			Sfx.play("select")
+		"reset":
+			Controls.reset_defaults()
+			Sfx.play("coin")
+		"back":
+			Sfx.play("select")
+			_to_title()
+		_:
+			_ctl_adjust(row["type"], 1)
 
 
 # ------------------------------------------------------------------ créditos
 
+## NG+ rende +25% de créditos por nível; o upgrade Coletor dá +50%.
 func add_credits(n: int) -> void:
-	run_credits += int(round(n * (1.0 + loop * 0.5)))
+	run_credits += int(round(n * (1.0 + loop * 0.25) * Profile.credit_mult()))
 
 
 ## Passa para o perfil (salvo) os créditos ainda não depositados desta partida.
@@ -449,9 +656,9 @@ func _begin_stage(i: int) -> void:
 	player.shield = maxi(player.shield, Profile.shield_charges())
 	var sub: String = stage["sub"]
 	if loop > 0:
-		sub += "  //  CICLO %d" % (loop + 1)
+		sub += "  //  NG+%d" % loop
 	show_banner(stage["name"], sub, stage["color"], 2.6)
-	Sfx.music("stage")
+	Sfx.music("stage", Sfx.tier_for(stage_idx, loop))
 
 
 func _clear_world() -> void:
@@ -495,7 +702,7 @@ func _update_director(dt: float) -> void:
 				boss = BOSS_SCRIPTS[stage["boss"]].new()
 				boss.setup(self)
 				add_child(boss)
-				Sfx.music("boss")
+				Sfx.music("boss", Sfx.tier_for(stage_idx, loop))
 		"clear":
 			if pt > 4.0:
 				if stage_idx + 1 < Stages.ALL.size():
@@ -636,7 +843,7 @@ func kill_enemy(e) -> void:
 	Sfx.play("big_explode" if big else "explode")
 	# a partir do ciclo 2, inimigos soltam balas ao morrer
 	if loop > 0 and e.kind != "turret":
-		bullets.ring(e.position, 6 + loop * 2, 120.0, randf() * TAU, {"color": Cfg.PINK, "r": 5.0})
+		bullets.ring(e.position, mini(4 + loop, 12), 120.0, randf() * TAU, {"color": Cfg.PINK, "r": 5.0})
 	kills += 1
 	if e.kind == "turret" or kills % 14 == 0:
 		items.spawn(e.position, "P")
@@ -662,12 +869,12 @@ func _cleanup_enemies() -> void:
 	enemies = keep
 
 
-func bomb_damage() -> void:
+func bomb_damage(mult := 1.0) -> void:
 	for e in enemies.duplicate():
 		if e.alive:
-			damage_enemy(e, 40.0)
+			damage_enemy(e, 40.0 * mult)
 	if boss != null:
-		boss.damage(70.0)
+		boss.damage(70.0 * mult)
 
 
 func on_boss_defeated(b) -> void:
@@ -701,11 +908,11 @@ func _collide() -> void:
 	for s in bullets.shots:
 		if not s.alive:
 			continue
-		var pierce: bool = s.kind == 1   # o laser atravessa e acerta cada alvo uma vez
+		var pierce := BulletManager.pierces(s.kind)   # laser e pulso atravessam e acertam cada alvo uma vez
 		for e in enemies:
 			if not e.alive or (pierce and s.hits.has(e)):
 				continue
-			var rr: float = e.r + 6.0
+			var rr: float = e.r + s.rad
 			if s.pos.distance_squared_to(e.position) < rr * rr:
 				damage_enemy(e, s.dmg)
 				fx.spark(s.pos, spark_col, 2, 120.0, 0.2, 2.0)
@@ -723,7 +930,7 @@ func _collide() -> void:
 		if pierce and s.hits.has(boss):
 			continue
 		for hp_ in boss_pts:
-			var br: float = hp_[1] + 6.0
+			var br: float = hp_[1] + s.rad
 			if s.pos.distance_squared_to(hp_[0]) < br * br:
 				if pierce:
 					s.hits.append(boss)
@@ -768,6 +975,7 @@ func _collide() -> void:
 			var g: float = Cfg.GRAZE_RADIUS + b.r
 			if d2 < g * g:
 				b.grazed = true
+				player.on_graze()
 				add_score(20)
 				fx.spark(b.pos, Cfg.WHITE, 2, 90.0, 0.2, 2.0)
 				Sfx.play("graze", -8.0)

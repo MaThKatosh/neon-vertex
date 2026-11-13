@@ -31,8 +31,13 @@ func spawn(pos: Vector2, kind: String) -> void:
 	list.append(it)
 
 
+## O item W alterna entre as 3 armas básicas + as exclusivas que você já comprou.
 func weapon_of(it) -> String:
-	return Cfg.WEAPONS[(it.w0 + int(it.t / WEAPON_CYCLE)) % Cfg.WEAPONS.size()]
+	var own: Array = Cfg.WEAPONS.slice(0, 3)
+	for w in Profile.owned_weapons():
+		if not own.has(w):
+			own.append(w)
+	return own[(it.w0 + int(it.t / WEAPON_CYCLE)) % own.size()]
 
 
 func magnet_all() -> void:

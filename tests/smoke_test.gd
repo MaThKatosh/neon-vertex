@@ -1,10 +1,13 @@
 extends SceneTree
-## Teste automático: compra upgrades na loja, joga sozinho (modo invencível) pelos 10 setores,
-## passa por TODAS as fases de todos os chefes, testa escudo/bomba/morte e o depósito de créditos.
-## Erros de script aparecem no console. Não grava nada no save.
+## Teste automático: menu, controles personalizáveis, loja (abas, bloqueios de elite), NEW GAME +,
+## as 6 armas e os 10 chefes (todas as fases), escudo, revive, bomba nova, vitória, recompensas e morte.
+## Joga em modo invencível; não grava nada no save.
 ## Rodar:  godot --headless --path . -s res://tests/smoke_test.gd
 
 var main
+var prof
+var ctl
+var sfx
 var frame := 0
 var step := "boot"
 var wait := 0
@@ -14,11 +17,15 @@ var fails: Array = []
 
 
 func _initialize() -> void:
-	var prof = root.get_node("Profile")
+	prof = root.get_node("Profile")
+	ctl = root.get_node("Controls")
+	sfx = root.get_node("Sfx")
 	prof.save_enabled = false
-	prof.credits = 100000
+	prof.credits = 200000
 	prof.levels = {}
 	prof.start_weapon = "spread"
+	prof.ng_cleared = -1
+	prof.ng_selected = 0
 	main = load("res://scenes/main.tscn").instantiate()
 	root.add_child(main)
 
@@ -29,67 +36,102 @@ func _check(cond: bool, msg: String) -> void:
 		print("  FALHOU: ", msg)
 
 
+func _buy_all_in_tab(tab: int) -> void:
+	main.shop_tab = tab
+	var n: int = main.shop_cards().size()
+	for i in n:
+		for k in 6:
+			main._shop_activate(i)
+
+
 func _physics_process(_dt: float) -> bool:
 	frame += 1
-	var prof = root.get_node("Profile")
 	var s: String = "%s/%s" % [main.state, main.phase]
 	if s != log_state:
 		log_state = s
-		print("[%d] estado=%s setor=%d inimigos=%d balas=%d cr=%d" % [frame, s, main.stage_idx + 1, main.enemies.size(), main.bullets.list.size(), main.run_credits])
+		print("[%d] estado=%s setor=%d NG=%d balas=%d cr=%d" % [frame, s, main.stage_idx + 1, main.loop, main.bullets.list.size(), main.run_credits])
 	if main.state == "playing" and step != "death":
-		main.player.invuln = 999.0   # modo deus para o teste
+		main.player.invuln = 999.0
 	match step:
 		"boot":
+			if frame == 10:
+				_check(main.state == "title", "não começou no menu")
+				main._on_title_menu(1)
+				_check(main.state == "controls", "menu CONTROLES não abriu")
+			if frame == 12:
+				# troca a tecla de BOMBA para B e confere no InputMap
+				ctl.keys["bomb"][0] = KEY_B
+				ctl.apply()
+				var found := false
+				for ev in InputMap.action_get_events("bomb"):
+					if ev is InputEventKey and ev.physical_keycode == KEY_B:
+						found = true
+				_check(found, "troca de tecla não aplicada")
+				ctl.reset_defaults(false)
+				ctl.apply()
+				main._ctl_adjust("sens", 1)
+				_check(absf(ctl.touch_sens - 1.35) < 0.01, "ajuste de sensibilidade falhou")
+				ctl.touch_focus_btn = true
+				var lay: Array = ctl.touch_layout()
+				_check(lay.size() == 3 and lay[2]["action"] == "focus", "botão de foco ausente no toque")
+				main._to_title()
+				main._on_title_menu(0)
+				_check(main.state == "shop", "menu JOGAR não abriu o Hangar")
 			if frame == 20:
-				main._open_shop()
+				# elite bloqueada antes de zerar
+				main.shop_tab = 2
+				_check(prof.buy("prism") == "locked", "elite deveria estar bloqueada")
+				_check(prof.ng_available() == 0, "NG+ deveria estar bloqueado")
+				_buy_all_in_tab(0)
+				_buy_all_in_tab(1)
+				_check(prof.level("drones") == 3 and prof.level("shield") == 3 and prof.level("hearts") == 2, "upgrades básicos não subiram")
+				# simula ter zerado tudo para liberar a elite e o NG+
+				prof.clear_ng(10)
+				_check(prof.ng_available() == 10, "NG+10 não liberou")
+				_buy_all_in_tab(2)
+				_check(prof.has("vertex") and prof.has("revive") and prof.has("drone3"), "elite não comprou")
+				_check(prof.owned_weapons().size() == 6, "nem todas as armas ficaram disponíveis")
+				prof.ng_selected = 2
+				print("  loja ok: créditos restantes %d" % prof.credits)
 			if frame == 30:
-				# compra tudo de todos os upgrades pela loja
-				var before: int = prof.credits
-				var rows: Array = main.shop_rows()
-				for i in rows.size():
-					if rows[i]["type"] == "up":
-						for k in 6:
-							main._shop_activate(i)
-				_check(prof.credits < before, "loja não cobrou créditos")
-				_check(prof.level("drones") == 3 and prof.level("shield") == 3, "upgrades não subiram de nível")
-				_check(prof.buy("hearts") == "max", "compra além do máximo deveria falhar")
-				prof.start_weapon = "spread"
-				prof.cycle_start_weapon()
-				_check(prof.start_weapon == "laser", "troca de arma inicial falhou")
-				print("  loja ok: créditos %d -> %d, arma inicial %s" % [before, prof.credits, prof.start_weapon])
-			if frame == 40:
-				main._shop_activate(0)   # INICIAR MISSÃO
-				_check(main.state == "playing", "INICIAR não começou a partida")
-				_check(main.player.lives == 5 and main.player.drone_pos.size() == 2 and main.player.shield == 3, "upgrades não aplicados ao jogador")
+				main.shop_tab = 0
+				main.shop_sel = main.shop_cards().size() + 2
+				main._shop_activate(main.shop_sel)   # INICIAR
+				_check(main.state == "playing" and main.loop == 2, "não iniciou no NG+2")
+				_check(main.player.drone_pos.size() == 3 and main.player.lives == 5, "upgrades não aplicados")
 				step = "waves"
 		"waves":
 			if main.phase == "waves" and main.stage_idx > 0 and main.pt < 30.0:
-				main.pt = 45.0   # setor 1 roda completo; os outros pulam as ondas
+				main.pt = 45.0
 			if main.phase == "boss" and main.boss != null:
 				step = "boss"
 				wait = 0
 				boss_seen += 1
-				main.collect("W", main.player.position, Cfg.WEAPONS[boss_seen % Cfg.WEAPONS.size()])
-				print("  chefe %d: %s  (arma: %s)" % [boss_seen, main.boss.boss_name, main.player.weapon])
+				var w: String = Cfg.WEAPONS[boss_seen % Cfg.WEAPONS.size()]
+				main.player.weapon = w
+				print("  chefe %d: %s  (arma: %s)" % [boss_seen, main.boss.boss_name, w])
 		"boss":
 			wait += 1
 			var b = main.boss
-			if b != null and b.state == "fight" and wait % 330 == 0:
-				print("    fase %d: balas=%d lasers=%d vida=%.0f%%" % [b.phase, main.bullets.list.size(), main.bullets.beams.size(), b.frac() * 100.0])
-				if b.phase == 1 and boss_seen == 1:
-					# escudo: absorve sem perder coração
+			if b != null and b.state == "fight" and wait % 300 == 0:
+				print("    fase %d: balas=%d tiros=%d vida=%.0f%%" % [b.phase, main.bullets.list.size(), main.bullets.shots.size(), b.frac() * 100.0])
+				if boss_seen == 1 and b.phase == 0:
 					main.player.invuln = 0.0
-					var lives: int = main.player.lives
-					main.player.hit()
-					_check(main.player.lives == lives and main.player.shield == 2, "escudo não absorveu o acerto")
+					main.player.shield = 0
+					main.player.lives = 1
+					main.player.hit()   # Segunda Chance deve salvar
+					_check(not main.player.dead and main.player.lives == 2, "segunda chance falhou")
 					main.player.invuln = 0.0
-					main.player.bomb()
+					main.player.bomb()   # bomba nova
 				b.damage(99999.0)
 			if main.state == "victory":
-				print("VITÓRIA no quadro %d, créditos da partida: %d" % [frame, main.run_credits])
-				_check(main.run_credits > Cfg.CLEAR_BONUS, "bônus de vitória não somado")
+				print("VITÓRIA NG+%d no quadro %d, créditos: %d" % [main.loop, frame, main.run_credits])
+				print("  resumo: ", main.summary)
+				_check(sfx.tracks.has("stage4") and sfx.tracks.has("boss4"), "trilhas intensas não foram geradas")
+				print("  trilhas: ", sfx.tracks.keys())
 				step = "death"
 				main._next_loop()
+				_check(main.loop == 3, "não seguiu para o NG+3")
 				main.player.invuln = 0.0
 			elif main.boss == null and main.phase == "waves":
 				step = "waves"

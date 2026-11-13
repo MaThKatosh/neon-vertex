@@ -22,10 +22,13 @@ upgrades permanentes no **Hangar**. Quanto mais você joga, mais forte fica. Zer
 |---|---|---|---|
 | Mover | WASD / setas | analógico / D-pad | arraste o dedo em qualquer lugar |
 | Tiro | automático | automático | automático |
-| Foco (lento + hitbox) | Shift | LB / RB / gatilhos | — |
+| Foco (lento + hitbox) | Shift / C | RB / gatilhos | segure o botão **FOCO** |
 | Bomba (limpa a tela) | X | B ou X | botão **B** na tela |
 | Pausa | Esc / P | Start | botão **II** no topo |
 | Som liga/desliga | M | Back/Select | — |
+
+Todas as teclas e botões podem ser trocados em **CONTROLES** no menu inicial (2 teclas + 1 botão de controle por ação).
+No celular dá para ajustar a sensibilidade do arrasto, o lado dos botões (canhotos) e ligar/desligar o botão de foco.
 
 ## Mecânicas
 
@@ -36,6 +39,21 @@ upgrades permanentes no **Hangar**. Quanto mais você joga, mais forte fica. Zer
 - **Hitbox** é o pontinho branco no centro da nave. Só ele conta como acerto.
 - O item **V** dá uma vida extra. Ele cai quando um chefe é derrotado.
 - **Armas** (item **W**, que troca de arma enquanto cai): **Leque**, **Laser** (atravessa) e **Enxame** (teleguiado).
+  Exclusivas do NG+: **Prisma** (divide em 3), **Pulso** (ondas largas que atravessam) e **Vertex** (tudo junto).
+
+## NEW GAME + (NG+1 a NG+10)
+
+- Zerar o jogo libera o **NG+1**; zerar o NG+1 libera o NG+2, e assim até o **NG+10**. O modo é escolhido no Hangar.
+- Cada nível: inimigos com +25% de vida, +10% de cadência, balas 6% mais rápidas, inimigos que soltam balas ao morrer
+  e +25% de créditos. Do NG+3 em diante a trilha já começa mais intensa.
+- Cada primeira vitória libera um item **exclusivo** na aba **ELITE** do Hangar:
+  Prisma (zerar), Coletor (NG+1), Pulso (NG+2), Segunda Chance (NG+3), Escudo Vivo (NG+4), Bomba Nova (NG+5),
+  Terceiro Drone (NG+6), Graze Vampírico (NG+7), Núcleo Estável (NG+8), Sobrecarga (NG+9) e a arma **Vertex** (NG+10).
+
+## Trilha sonora
+
+A música é gerada por código em 5 níveis de intensidade: a cada 2 setores o andamento sobe (120 → 156 BPM)
+e entram camadas novas (chimbal em semicolcheias, arpejo rápido, bumbo sincopado, lead e viradas). O chefe toca um nível acima.
 
 ## Hangar (loja) e créditos
 
@@ -79,7 +97,8 @@ scripts/
   neon.gd                funções de desenho neon (brilho em camadas)
   autoload/controls.gd   teclado + controle + toque
   autoload/sfx.gd        sons e músicas sintetizados
-  autoload/profile.gd    perfil salvo: créditos, upgrades, recorde
+  autoload/profile.gd    perfil salvo: créditos, upgrades, NG+, recorde
+  synth.gd               sintetizador usado pelos sons e músicas
 tests/
   smoke_test.gd          joga os 10 setores sozinho e testa loja/escudo/morte
   screenshots.gd         gera capturas do Hangar e dos chefes

@@ -43,9 +43,10 @@ class Shot:
 	var vel := Vector2.ZERO
 	var dmg := 1.0
 	var alive := true
-	var kind := 0          # 0 normal (leque), 1 laser (atravessa), 2 teleguiado (enxame)
-	var hits: Array = []   # alvos que o laser já atingiu (acerta cada um uma vez)
+	var kind := 0          # 0 normal, 1 laser (atravessa), 2 teleguiado, 3 prisma (divide), 4 pulso (atravessa, largo)
+	var hits: Array = []   # alvos que um tiro que atravessa já atingiu (acerta cada um uma vez)
 	var t := 0.0
+	var rad := 6.0         # raio de acerto
 
 const MAX_BULLETS := 1500
 
@@ -103,13 +104,19 @@ func shoot(pos: Vector2, ang: float, speed: float, o: Dictionary = {}) -> Bullet
 	return b
 
 
-func add_shot(pos: Vector2, vel: Vector2, dmg: float, kind := 0) -> void:
+func add_shot(pos: Vector2, vel: Vector2, dmg: float, kind := 0, rad := 6.0) -> void:
 	var s := Shot.new()
 	s.pos = pos
 	s.vel = vel
 	s.dmg = dmg
 	s.kind = kind
+	s.rad = rad
 	shots.append(s)
+
+
+## Tiros que atravessam inimigos (acertam cada alvo uma vez).
+static func pierces(kind: int) -> bool:
+	return kind == 1 or kind == 4
 
 
 ## Cria um laser. ang_vel faz o feixe girar; o chefe também pode mexer em pos/ang/length a cada quadro.
@@ -220,17 +227,29 @@ func step(dt: float) -> void:
 	_compact()
 
 	var j := 0
+	var born: Array[Shot] = []   # tiros criados pela divisão do prisma
 	for k in shots.size():
 		var s: Shot = shots[k]
 		s.t += dt
 		if s.kind == 2 and s.t > 0.08:
 			_steer(s, dt)
+		if s.kind == 3 and s.alive and s.t > 0.12:
+			s.alive = false
+			for a in [-0.25, 0.0, 0.25]:
+				var c := Shot.new()
+				c.pos = s.pos
+				c.vel = Vector2.from_angle(s.vel.angle() + a) * 1100.0
+				c.dmg = s.dmg * 0.7
+				c.kind = 5   # fragmento do prisma (normal, só muda a cor)
+				born.append(c)
+			main.fx.spark(s.pos, Cfg.WEAPON_COLORS["prism"], 2, 80.0, 0.15, 2.0)
 		s.pos += s.vel * dt
 		var inside := s.pos.y > -40.0 and s.pos.y < Cfg.H + 40.0 and s.pos.x > -40.0 and s.pos.x < Cfg.W + 40.0
 		if s.alive and inside and s.t < 3.0:
 			shots[j] = s
 			j += 1
 	shots.resize(j)
+	shots.append_array(born)
 
 	j = 0
 	for k in beams.size():
@@ -340,6 +359,8 @@ func _draw_shots(ci: CanvasItem) -> void:
 	var core := Neon.hot(Color(0.8, 1.0, 1.0), 1.5)
 	var laser: Color = Cfg.WEAPON_COLORS["laser"]
 	var homing: Color = Cfg.WEAPON_COLORS["homing"]
+	var prism: Color = Cfg.WEAPON_COLORS["prism"]
+	var pulse: Color = Cfg.WEAPON_COLORS["pulse"]
 	for s in shots:
 		match s.kind:
 			1:
@@ -348,6 +369,20 @@ func _draw_shots(ci: CanvasItem) -> void:
 			2:
 				ci.draw_texture_rect(gt, Rect2(s.pos.x - 14.0, s.pos.y - 14.0, 28.0, 28.0), false, homing)
 				ci.draw_texture_rect(ct, Rect2(s.pos.x - 4.5, s.pos.y - 4.5, 9.0, 9.0), false, Neon.hot(homing.lerp(Color.WHITE, 0.5), 1.6))
+			3, 5:
+				# cristal do prisma (e seus fragmentos, menores)
+				var sz := 1.0 if s.kind == 3 else 0.7
+				ci.draw_set_transform(s.pos, s.vel.angle() + PI / 2.0, Vector2(sz, sz))
+				ci.draw_texture_rect(gt, Rect2(-9.0, -18.0, 18.0, 36.0), false, prism)
+				ci.draw_colored_polygon(PackedVector2Array([Vector2(0, -11), Vector2(4, 0), Vector2(0, 11), Vector2(-4, 0)]), Neon.hot(prism.lerp(Color.WHITE, 0.5), 1.5))
+				ci.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+			4:
+				# onda do pulso: um arco largo virado para a direção do tiro
+				ci.draw_set_transform(s.pos, s.vel.angle() + PI / 2.0, Vector2.ONE)
+				ci.draw_arc(Vector2(0, 14), 26.0, -PI * 0.85, -PI * 0.15, 20, Color(pulse, 0.25), 14.0, true)
+				ci.draw_arc(Vector2(0, 14), 26.0, -PI * 0.85, -PI * 0.15, 20, Color(pulse, 0.8), 6.0, true)
+				ci.draw_arc(Vector2(0, 14), 26.0, -PI * 0.82, -PI * 0.18, 20, Neon.hot(Color(0.9, 1.0, 1.0), 1.6), 2.0, true)
+				ci.draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
 			_:
 				ci.draw_texture_rect(gt, Rect2(s.pos.x - 8.0, s.pos.y - 20.0, 16.0, 40.0), false, halo)
 				ci.draw_texture_rect(ct, Rect2(s.pos.x - 2.5, s.pos.y - 10.0, 5.0, 20.0), false, core)

@@ -2,24 +2,27 @@ class_name Player
 extends Node2D
 ## O triângulo. Tiro automático; o nível de poder (1-4) muda o padrão de disparo.
 ## Segurar FOCO deixa a nave lenta, concentra os tiros e mostra a hitbox.
-## Os upgrades comprados no Hangar (Profile) mudam vidas, bombas, dano, cadência, escudo e drones.
+## Os upgrades comprados no Hangar (Profile) mudam vidas, bombas, dano, cadência, escudo, drones etc.
 
 var main
 var lives := Cfg.START_LIVES
 var bombs := Cfg.START_BOMBS
 var power := 1
-var weapon := "spread"     # spread (leque) | laser | homing (enxame)
-var shield := 0            # acertos que o escudo ainda absorve neste setor
+var weapon := "spread"     # veja Cfg.WEAPONS
+var shield := 0            # acertos que o escudo ainda absorve
 var invuln := 0.0
 var bombing := 0.0
 var fire_cd := 0.0
 var focus := false
 var dead := false
 var tilt := 0.0
+var grazes := 0
 
 var drone_pos: Array = []  # posições (mundo) dos drones
 var _drone_cd := 0.0
 var _shot_count := 0
+var _revive_left := 0
+var _regen_t := 0.0
 
 
 func _ready() -> void:
@@ -38,20 +41,28 @@ func reset() -> void:
 	fire_cd = 0.0
 	dead = false
 	tilt = 0.0
+	grazes = 0
+	_revive_left = 1 if Profile.has("revive") else 0
+	_regen_t = 0.0
 	drone_pos.clear()
-	for k in mini(Profile.drones(), 2):
+	for k in Profile.drone_count():
 		drone_pos.append(position + _drone_offset(k))
 
 
 func _drone_offset(k: int) -> Vector2:
-	return Vector2(-34.0 if k == 0 else 34.0, 16.0)
+	match k:
+		0:
+			return Vector2(-34.0, 16.0)
+		1:
+			return Vector2(34.0, 16.0)
+	return Vector2(0.0, 40.0)
 
 
 func step(dt: float) -> void:
 	queue_redraw()
 	if dead:
 		return
-	focus = Input.is_action_pressed("focus")
+	focus = Controls.focus_held()
 	var spd := Cfg.PLAYER_FOCUS_SPEED if focus else Cfg.PLAYER_SPEED
 	var mv: Vector2 = Controls.move_vector()
 	var drag: Vector2 = Controls.drag
@@ -67,20 +78,42 @@ func step(dt: float) -> void:
 		bombing -= dt
 		main.bullets.cancel_all(true)
 
+	# Escudo Vivo: recarrega 1 escudo a cada 25 s
+	if Profile.has("regen") and shield < maxi(1, Profile.shield_charges()):
+		_regen_t += dt
+		if _regen_t >= 25.0:
+			_regen_t = 0.0
+			shield += 1
+			main.fx.ring(position, Cfg.WHITE, 50.0, 0.3, 2.0)
+			Sfx.play("shield", -6.0)
+
 	var rate := Profile.rate_mult()
 	fire_cd -= dt
 	if fire_cd <= 0.0:
+		_shot_count += 1
 		match weapon:
 			"laser":
 				fire_cd += 0.05 / rate
-				_fire_laser()
+				_fire_laser(1.0)
 			"homing":
 				fire_cd += 0.16 / rate
-				_fire_homing()
+				_fire_homing(1.0)
+			"prism":
+				fire_cd += 0.1 / rate
+				_fire_prism()
+			"pulse":
+				fire_cd += 0.3 / rate
+				_fire_pulse()
+			"vertex":
+				fire_cd += 0.08 / rate
+				_fire()
+				if _shot_count % 2 == 0:
+					_fire_laser(0.8)
+				if _shot_count % 4 == 0:
+					_fire_homing(0.8)
 			_:
 				fire_cd += Cfg.FIRE_RATE / rate
 				_fire()
-		_shot_count += 1
 		if _shot_count % 2 == 0:
 			Sfx.play("shoot", -12.0)
 
@@ -115,6 +148,7 @@ func _dmg(base: float) -> float:
 	return base * Profile.damage_mult()
 
 
+## LEQUE: tiros retos que abrem em leque conforme o poder.
 func _fire() -> void:
 	var s := 0.0
 	_shot(-6.0, 0.0)
@@ -132,27 +166,54 @@ func _fire() -> void:
 
 
 ## LASER: feixes rápidos e finos que ATRAVESSAM inimigos. Ótimo contra filas e chefes.
-func _fire_laser() -> void:
+func _fire_laser(mult: float) -> void:
 	var lines: int = [1, 2, 2, 3][power - 1]
 	var dmg := 1.4 if power < 3 else 1.75
 	var gap := 6.0 if focus else 11.0
 	for i in lines:
 		var dx := (i - (lines - 1) / 2.0) * gap
-		main.bullets.add_shot(position + Vector2(dx, -24.0), Vector2(0, -1500.0), _dmg(dmg), 1)
+		main.bullets.add_shot(position + Vector2(dx, -24.0), Vector2(0, -1500.0), _dmg(dmg * mult), 1)
 
 
 ## ENXAME: orbes teleguiados mais lentos que procuram o alvo mais próximo. Nunca erram, mas batem fraco.
-func _fire_homing() -> void:
+func _fire_homing(mult: float) -> void:
 	var n: int = [2, 3, 4, 6][power - 1]
 	var spread := 0.25 if focus else 0.45
 	for i in n:
 		var a := -PI / 2.0 + (i - (n - 1) / 2.0) * spread
-		main.bullets.add_shot(position + Vector2(0, -10.0), Vector2.from_angle(a) * 600.0, _dmg(1.6), 2)
+		main.bullets.add_shot(position + Vector2(0, -10.0), Vector2.from_angle(a) * 600.0, _dmg(1.6 * mult), 2)
+
+
+## PRISMA (exclusiva): cristais que se dividem em 3 logo depois de sair da nave.
+func _fire_prism() -> void:
+	var n: int = [1, 2, 2, 3][power - 1]
+	var gap := 10.0 if focus else 16.0
+	for i in n:
+		var dx := (i - (n - 1) / 2.0) * gap
+		main.bullets.add_shot(position + Vector2(dx, -16.0), Vector2(0, -1050.0), _dmg(1.3 if power >= 3 else 1.1), 3)
+
+
+## PULSO (exclusiva): ondas largas e lentas que atravessam tudo e batem forte.
+func _fire_pulse() -> void:
+	var angles: Array = [[0.0], [0.0], [-0.12, 0.12], [-0.2, 0.0, 0.2]][power - 1]
+	var dmg := 3.2 if power < 3 else 3.6
+	for a in angles:
+		var ang: float = -PI / 2.0 + float(a) * (0.5 if focus else 1.0)
+		main.bullets.add_shot(position + Vector2(0, -18.0), Vector2.from_angle(ang) * 650.0, _dmg(dmg), 4, 24.0)
 
 
 func _shot(dx: float, a: float) -> void:
 	var ang := -PI / 2.0 + a
 	main.bullets.add_shot(position + Vector2(dx, -14.0), Vector2.from_angle(ang) * Cfg.SHOT_SPEED, _dmg(1.0))
+
+
+## Chamado pelo Main quando você raspa numa bala.
+func on_graze() -> void:
+	grazes += 1
+	if Profile.has("vampire") and grazes % 120 == 0 and lives < Profile.lives_cap():
+		lives += 1
+		main.fx.text(position + Vector2(0, -30), "+VIDA (GRAZE)", Cfg.PINK, 14)
+		Sfx.play("power")
 
 
 func hit() -> void:
@@ -169,13 +230,25 @@ func hit() -> void:
 		Sfx.play("shield")
 		return
 	lives -= 1
-	power = maxi(1, power - 1)
+	if not Profile.has("stable"):
+		power = maxi(1, power - 1)
 	invuln = Profile.invuln_time()
 	main.fx.explode(position, Cfg.CYAN, 1.4)
 	main.fx.add_shake(14.0)
 	main.fx.flash(Cfg.RED, 0.35)
 	main.bullets.cancel(position, 170.0, false)   # limpa a área: segunda chance justa
 	Sfx.play("player_hit")
+	if lives <= 0 and _revive_left > 0:
+		# Segunda Chance
+		_revive_left -= 1
+		lives = 2
+		invuln = 3.0
+		main.bullets.cancel_all(true)
+		main.fx.ring(position, Cfg.PINK, 500.0, 0.8, 8.0)
+		main.fx.flash(Cfg.WHITE, 0.6)
+		main.show_banner("SEGUNDA CHANCE", "o núcleo se reconstruiu", Cfg.PINK, 2.0)
+		Sfx.play("phase")
+		return
 	if lives <= 0:
 		dead = true
 		main.fx.explode(position, Cfg.CYAN, 3.0)
@@ -186,16 +259,19 @@ func hit() -> void:
 func bomb() -> void:
 	if bombs <= 0 or dead or bombing > 0.0:
 		return
+	var nova := Profile.has("nova")
 	bombs -= 1
-	bombing = 1.0
-	invuln = maxf(invuln, 2.4)
+	bombing = 1.6 if nova else 1.0
+	invuln = maxf(invuln, 3.0 if nova else 2.4)
 	main.bullets.cancel_all(true)
 	main.fx.ring(position, Cfg.CYAN, 650.0, 0.9, 10.0)
 	main.fx.ring(position, Cfg.MAGENTA, 450.0, 0.7, 6.0)
+	if nova:
+		main.fx.ring(position, Cfg.WHITE, 800.0, 1.2, 14.0)
 	main.fx.flash(Cfg.CYAN, 0.4)
-	main.fx.add_shake(10.0)
+	main.fx.add_shake(14.0 if nova else 10.0)
 	Sfx.play("bomb")
-	main.bomb_damage()
+	main.bomb_damage(3.0 if nova else 1.0)
 
 
 func _draw() -> void:
