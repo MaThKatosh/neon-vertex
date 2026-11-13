@@ -1,0 +1,3 @@
+# Normaliza finais de linha (padrão recomendado para projetos Godot)
+* text=auto eol=lf
+*.cmd text eol=crlf

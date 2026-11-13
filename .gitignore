@@ -1,0 +1,6 @@
+# Cache do Godot
+.godot/
+# Exportações
+build/
+*.apk
+*.aab
