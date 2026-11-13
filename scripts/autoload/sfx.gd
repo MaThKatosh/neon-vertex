@@ -18,6 +18,10 @@ var _last := {}
 var _b := PackedFloat32Array()   # buffer de trabalho da síntese dos efeitos
 var _thread: Thread
 var _pending: Array = []   # trilhas a gerar aos poucos (versão Web)
+var _job_synth: Synth = null
+var _job_key := ""
+var _req_mode := ""
+var _req_tier := 0
 
 
 func _ready() -> void:
@@ -31,17 +35,18 @@ func _ready() -> void:
 	add_child(_music)
 	_build_sfx()
 	# a música fica mais frenética a cada par de setores: 5 níveis de intensidade (0..4).
-	# Gera na hora só o que o começo do jogo usa; o resto é gerado numa thread em segundo plano.
 	var s := Synth.new()
 	tracks["title"] = _build_track(s, "title", 0)
-	tracks["stage0"] = _build_track(s, "stage", 0)
-	tracks["boss0"] = _build_track(s, "boss", 0)
 	if OS.has_feature("web"):
-		# no navegador não há threads: gera uma trilha a cada ~2 s pelo _process (os setores 1-2 já estão prontos)
-		for k in range(1, 5):
+		# no navegador não há threads: todas as trilhas de jogo são geradas em fatias pelo _process,
+		# sem travar (a do setor 1 fica pronta em poucos segundos, as mais intensas bem antes de serem usadas)
+		for k in range(0, 5):
 			_pending.append(["stage", k])
 			_pending.append(["boss", k])
 	else:
+		# PC/celular: gera na hora o que o começo usa; o resto numa thread em segundo plano
+		tracks["stage0"] = _build_track(s, "stage", 0)
+		tracks["boss0"] = _build_track(s, "boss", 0)
 		_thread = Thread.new()
 		_thread.start(_build_rest)
 	var cf := ConfigFile.new()
@@ -73,13 +78,20 @@ static func tier_for(stage_idx: int, ng: int) -> int:
 
 ## "title", "stage", "boss" ou "silence". `tier` escolhe a intensidade (0..4).
 func music(mode: String, tier := 0) -> void:
-	var key := mode
-	if mode == "stage" or mode == "boss":
-		# se a versão pedida ainda está sendo gerada, usa a mais intensa já pronta
-		var k := tier
-		while k > 0 and not tracks.has("%s%d" % [mode, k]):
-			k -= 1
-		key = "%s%d" % [mode, k]
+	_req_mode = mode
+	_req_tier = tier
+	_apply_music()
+
+
+## Toca a melhor versão já pronta da trilha pedida; chamada de novo quando uma trilha nova fica pronta.
+func _apply_music() -> void:
+	var key := _req_mode
+	if key == "stage" or key == "boss":
+		key = ""
+		for k in range(_req_tier, -1, -1):
+			if tracks.has("%s%d" % [_req_mode, k]):
+				key = "%s%d" % [_req_mode, k]
+				break
 	if key == _mode:
 		return
 	_mode = key
@@ -103,12 +115,24 @@ func _on_rest_ready(done: Dictionary) -> void:
 	_thread.wait_to_finish()
 	for key in done:
 		tracks[key] = done[key]
+	_apply_music()
 
 
+## Versão Web: gera as trilhas em fatias de no máximo ~3 ms por quadro (sem travadas).
 func _process(_delta: float) -> void:
-	if not _pending.is_empty() and Engine.get_process_frames() % 120 == 0:
+	if _job_synth == null:
+		if _pending.is_empty():
+			return
 		var job: Array = _pending.pop_front()
-		tracks["%s%d" % job] = _build_track(Synth.new(), job[0], job[1])
+		_job_key = "%s%d" % job
+		_job_synth = Synth.new()
+		_job_synth.recording = true
+		_compose(_job_synth, job[0], job[1])   # só anota as notas (rápido)
+		return
+	if _job_synth.step(3000):
+		tracks[_job_key] = _job_synth.finish_wav(true)
+		_job_synth = null
+		_apply_music()
 
 
 func _exit_tree() -> void:
@@ -250,6 +274,12 @@ const LEAD := [1.0, 1.5, 1.19, 2.0, 1.78, 1.5]
 ##   3: bumbo sincopado + baixo com oitavas · 4: lead serrilhado + virada de caixa + sobe um tom
 ## O chefe toca sempre um nível acima do setor (até 5).
 func _build_track(s: Synth, mode: String, k: int) -> AudioStreamWAV:
+	_compose(s, mode, k)
+	return s.wav(true)
+
+
+## Escreve as notas da trilha no sintetizador (ou só anota, se s.recording = true).
+func _compose(s: Synth, mode: String, k: int) -> void:
 	var boss := mode == "boss"
 	var lvl := k + (1 if boss else 0)
 	var bpm := 118.0 if mode == "title" else 120.0 + 9.0 * k + (12.0 if boss else 0.0)
@@ -301,7 +331,6 @@ func _build_track(s: Synth, mode: String, k: int) -> AudioStreamWAV:
 		if lvl >= 4 and bar >= 2 and (st == 0 or st == 3 or st == 6 or st == 10 or st == 12):
 			var ld: float = LEAD[(st + bar) % LEAD.size()]
 			s.tone(t, 0.18, root * 4.0 * ld, 0.0, 0.07, 2, 3200.0)
-	return s.wav(true)
 
 
 # ------------------------------------------------------------------ síntese

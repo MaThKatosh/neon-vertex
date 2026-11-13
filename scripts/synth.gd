@@ -7,6 +7,14 @@ const RATE := 22050
 
 var b := PackedFloat32Array()
 
+# Modo "em fatias": com `recording = true`, tone()/noise() só anotam as notas;
+# depois step() processa um pouco por quadro, sem travar o jogo (usado na versão Web).
+var recording := false
+var _queue: Array = []
+var _qi := 0
+var _enc_i := 0
+var _data := PackedByteArray()
+
 
 func start(seconds: float) -> void:
 	b = PackedFloat32Array()
@@ -27,6 +35,9 @@ func _osc(kind: int, ph: float) -> float:
 
 ## Nota com glissando (f0 -> f1), envelope de decaimento e filtro passa-baixa opcional (lp em Hz).
 func tone(start_s: float, dur: float, f0: float, f1: float, vol: float, kind: int, lp := 0.0) -> void:
+	if recording:
+		_queue.append([0, start_s, dur, f0, f1, vol, kind, lp])
+		return
 	var size := b.size()
 	var i0 := int(start_s * RATE)
 	var n := int(dur * RATE)
@@ -57,6 +68,9 @@ func tone(start_s: float, dur: float, f0: float, f1: float, vol: float, kind: in
 
 ## Ruído filtrado (explosões, bateria). Varre o filtro de f0 até f1.
 func noise(start_s: float, dur: float, vol: float, f0: float, f1: float, highpass := false) -> void:
+	if recording:
+		_queue.append([1, start_s, dur, vol, f0, f1, highpass])
+		return
 	var size := b.size()
 	var i0 := int(start_s * RATE)
 	var n := int(dur * RATE)
@@ -78,6 +92,36 @@ func noise(start_s: float, dur: float, vol: float, f0: float, f1: float, highpas
 		b[idx] += o * vol * k * k
 
 
+## Processa as notas anotadas e depois codifica o áudio, parando quando gastar `budget_usec`.
+## Retorna true quando terminou (aí é só chamar finish_wav()).
+func step(budget_usec: int) -> bool:
+	var t0 := Time.get_ticks_usec()
+	recording = false
+	while _qi < _queue.size():
+		var e: Array = _queue[_qi]
+		_qi += 1
+		if e[0] == 0:
+			tone(e[1], e[2], e[3], e[4], e[5], e[6], e[7])
+		else:
+			noise(e[1], e[2], e[3], e[4], e[5], e[6])
+		if Time.get_ticks_usec() - t0 > budget_usec:
+			return false
+	if _data.size() != b.size() * 2:
+		_data.resize(b.size() * 2)
+	while _enc_i < b.size():
+		var end := mini(b.size(), _enc_i + 2048)
+		for i in range(_enc_i, end):
+			_data.encode_s16(i * 2, int(tanh(b[i]) * 32000.0))
+		_enc_i = end
+		if Time.get_ticks_usec() - t0 > budget_usec:
+			return false
+	return true
+
+
+func finish_wav(loop: bool) -> AudioStreamWAV:
+	return _make_wav(_data, b.size(), loop)
+
+
 func wav(loop: bool) -> AudioStreamWAV:
 	var n := b.size()
 	var data := PackedByteArray()
@@ -85,6 +129,10 @@ func wav(loop: bool) -> AudioStreamWAV:
 	for i in n:
 		var v := tanh(b[i])   # saturação suave em vez de clipar
 		data.encode_s16(i * 2, int(v * 32000.0))
+	return _make_wav(data, n, loop)
+
+
+func _make_wav(data: PackedByteArray, n: int, loop: bool) -> AudioStreamWAV:
 	var w := AudioStreamWAV.new()
 	w.format = AudioStreamWAV.FORMAT_16_BITS
 	w.mix_rate = RATE

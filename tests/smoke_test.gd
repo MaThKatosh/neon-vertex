@@ -54,6 +54,24 @@ func _physics_process(_dt: float) -> bool:
 		main.player.invuln = 999.0
 	match step:
 		"boot":
+			if frame == 5:
+				# síntese em fatias (versão Web): resultado igual ao normal e nenhuma fatia longa
+				var sl = Synth.new()
+				sl.recording = true
+				sfx._compose(sl, "boss", 4)
+				var slices := 0
+				var worst := 0
+				var done := false
+				while not done:
+					var t0 := Time.get_ticks_usec()
+					done = sl.step(3000)
+					worst = maxi(worst, Time.get_ticks_usec() - t0)
+					slices += 1
+				var full = sfx._build_track(Synth.new(), "boss", 4)
+				var sliced = sl.finish_wav(true)
+				_check(sliced.data.size() == full.data.size(), "trilha em fatias com tamanho diferente")
+				_check(worst < 12000, "fatia de síntese longa demais: %d us" % worst)
+				print("  síntese em fatias: %d fatias, pior fatia %.1f ms" % [slices, worst / 1000.0])
 			if frame == 10:
 				_check(main.state == "title", "não começou no menu")
 				main._on_title_menu(1)

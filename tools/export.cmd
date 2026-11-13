@@ -42,7 +42,8 @@ tar -a -c -f "build\NEON-VERTEX-demo-windows.zip" -C "build\windows" NEON-VERTEX
 rem a versao Web vai para o itch.io como zip com o index.html na raiz
 if not exist "build\web\index.html" goto :done
 if exist "build\NEON-VERTEX-web.zip" del "build\NEON-VERTEX-web.zip"
-tar -a -c -f "build\NEON-VERTEX-web.zip" -C "build\web" *
+del /q "build\web\*.import" 2>nul
+powershell -NoProfile -Command "Add-Type -AssemblyName System.IO.Compression.FileSystem; [IO.Compression.ZipFile]::CreateFromDirectory('build\web', 'build\NEON-VERTEX-web.zip')"
 
 :done
 echo.
