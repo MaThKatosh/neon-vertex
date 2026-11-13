@@ -52,6 +52,21 @@ func _draw_body(_col: Color) -> void:
 	pass
 
 
+## Chamado todo quadro, em qualquer estado (útil para chefes com várias partes).
+func _animate(_dt: float) -> void:
+	pass
+
+
+## Pontos que recebem tiro e machucam ao encostar: [[posição, raio], ...]
+func hit_points() -> Array:
+	return [[position, radius]]
+
+
+## true se algo (ex.: escudo) bloqueia um tiro do jogador nessa posição.
+func blocks(_p: Vector2) -> bool:
+	return false
+
+
 # ------------------------------------------------------------------ ajudantes
 
 func every(key: String, interval: float) -> bool:
@@ -89,6 +104,7 @@ func step(delta: float) -> void:
 	st += delta
 	flash = maxf(0.0, flash - delta)
 	rot += delta * (0.5 + phase * 0.5) * spin
+	_animate(delta)
 	queue_redraw()
 	match state:
 		"enter":

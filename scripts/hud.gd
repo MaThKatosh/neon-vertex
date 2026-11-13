@@ -20,6 +20,8 @@ func _draw() -> void:
 	var m = main
 	if m.state == "title":
 		_title()
+	elif m.state == "shop":
+		_shop()
 	else:
 		_hud()
 		if m.boss != null:
@@ -30,12 +32,11 @@ func _draw() -> void:
 			_touch_buttons()
 		match m.state:
 			"paused":
-				_menu_screen("PAUSA", Cfg.CYAN, ["ESC / START PARA VOLTAR"])
+				_menu_screen("PAUSA", Cfg.CYAN, ["ESC / START PARA VOLTAR", "créditos desta missão já estão salvos"])
 			"gameover":
-				var rec: String = "NOVO RECORDE!" if m.new_hi else "RECORDE  %d" % m.hi
-				_menu_screen("FIM DE JOGO", Cfg.RED, ["PONTOS  %d" % m.score, rec])
+				_menu_screen("FIM DE JOGO", Cfg.RED, m.summary)
 			"victory":
-				_menu_screen("VITÓRIA", Cfg.LIME, ["A GRADE FOI PURIFICADA", "PONTOS  %d" % m.score, "PRÓXIMO CICLO: MAIS RÁPIDO E DENSO"])
+				_menu_screen("VITÓRIA", Cfg.LIME, ["O CAOS FOI CONTIDO"] + m.summary)
 	if m.fx.flash_a > 0.0:
 		draw_rect(Rect2(0, 0, Cfg.W, Cfg.H), Color(m.fx.flash_color, m.fx.flash_a * 0.6))
 	draw_multiline(_scan, Color(0, 0, 0, 0.16), 1.0)
@@ -50,11 +51,16 @@ func _hud() -> void:
 		PackedColorArray([top, top, clear, clear]))
 	Neon.text(self, "SCORE", Vector2(18, 18), 11, Cfg.CYAN, HORIZONTAL_ALIGNMENT_LEFT, false)
 	Neon.text(self, "%08d" % m.score, Vector2(18, 40), 22, Cfg.WHITE, HORIZONTAL_ALIGNMENT_LEFT, true)
-	Neon.text(self, "HI %08d" % maxi(m.hi, m.score), Vector2(18, 62), 11, Cfg.MAGENTA, HORIZONTAL_ALIGNMENT_LEFT, false)
+	Neon.text(self, "HI %08d" % maxi(Profile.hi, m.score), Vector2(18, 62), 11, Cfg.MAGENTA, HORIZONTAL_ALIGNMENT_LEFT, false)
 
-	var n: int = maxi(p.lives, Cfg.START_LIVES)
+	var n: int = maxi(p.lives, Profile.max_lives())
 	for i in n:
-		_heart(Vector2(Cfg.W - 28.0 - i * 32.0, 34.0), 11.0, i < p.lives)
+		_heart(Vector2(Cfg.W - 28.0 - i * 28.0, 30.0), 10.0, i < p.lives)
+	# créditos da partida + cargas de escudo
+	Neon.text(self, "+%d CR" % m.run_credits, Vector2(Cfg.W - 16.0, 58.0), 12, Cfg.YELLOW, HORIZONTAL_ALIGNMENT_RIGHT, false)
+	for i in p.shield:
+		draw_arc(Vector2(Cfg.W - 120.0 - i * 18.0, 58.0), 6.0, 0.0, TAU, 20, Cfg.WHITE, 2.0, true)
+	Neon.text(self, "SETOR %02d" % (m.stage_idx + 1), Vector2(Cfg.W / 2.0, 66.0), 10, Color(1, 1, 1, 0.5), HORIZONTAL_ALIGNMENT_CENTER, false)
 
 	# arma atual + nível de poder
 	var wc: Color = Cfg.WEAPON_COLORS[p.weapon]
@@ -138,7 +144,8 @@ func _menu_screen(title: String, col: Color, lines: Array) -> void:
 	draw_rect(Rect2(0, 0, Cfg.W, Cfg.H), Color(Cfg.BG, 0.75))
 	Neon.glitch(self, title, Vector2(Cfg.W / 2.0, Cfg.H * 0.3), 46, m.t, col, Cfg.CYAN)
 	for i in lines.size():
-		Neon.text(self, lines[i], Vector2(Cfg.W / 2.0, Cfg.H * 0.4 + i * 32.0), 16, Cfg.WHITE, HORIZONTAL_ALIGNMENT_CENTER, false)
+		var lc := Cfg.YELLOW if str(lines[i]).begins_with("CRÉDITOS") else Cfg.WHITE
+		Neon.text(self, lines[i], Vector2(Cfg.W / 2.0, Cfg.H * 0.38 + i * 30.0), 16, lc, HORIZONTAL_ALIGNMENT_CENTER, false)
 	for i in m.menu_items.size():
 		var y: float = m.menu_y(i)
 		var sel: bool = i == m.menu_sel
@@ -151,10 +158,10 @@ func _menu_screen(title: String, col: Color, lines: Array) -> void:
 func _title() -> void:
 	var tm: float = main.t
 	var c := Vector2(Cfg.W / 2.0, Cfg.H * 0.5)
-	# os 4 chefes orbitando
-	var shapes := [[4, Cfg.YELLOW], [0, Cfg.MAGENTA], [5, Cfg.ORANGE], [6, Cfg.PURPLE]]
-	for i in 4:
-		var a := tm * 0.4 + i * TAU / 4.0
+	# os chefes orbitando
+	var shapes := [[4, Cfg.YELLOW], [0, Cfg.MAGENTA], [3, Cfg.RED], [5, Cfg.ORANGE], [6, Cfg.PURPLE], [8, Cfg.BLUE]]
+	for i in shapes.size():
+		var a := tm * 0.4 + i * TAU / shapes.size()
 		var pos := c + Vector2(cos(a) * 190.0, sin(a) * 50.0)
 		var s := 26.0 + sin(a) * 8.0
 		var sides: int = shapes[i][0]
@@ -183,4 +190,60 @@ func _title() -> void:
 		Neon.text(self, "WASD / SETAS: MOVER    SHIFT: FOCO", Vector2(c.x, Cfg.H * 0.74), 12, hint, HORIZONTAL_ALIGNMENT_CENTER, false)
 		Neon.text(self, "X: BOMBA    ESC: PAUSA    M: SOM", Vector2(c.x, Cfg.H * 0.74 + 24.0), 12, hint, HORIZONTAL_ALIGNMENT_CENTER, false)
 		Neon.text(self, "CONTROLE: ANALÓGICO  •  B: BOMBA  •  LB/RB: FOCO", Vector2(c.x, Cfg.H * 0.74 + 48.0), 12, hint, HORIZONTAL_ALIGNMENT_CENTER, false)
-	Neon.text(self, "RECORDE  %08d" % main.hi, Vector2(c.x, Cfg.H * 0.92), 13, Cfg.MAGENTA)
+	Neon.text(self, "RECORDE  %08d" % Profile.hi, Vector2(c.x, Cfg.H * 0.9), 13, Cfg.MAGENTA)
+	Neon.text(self, "CRÉDITOS  %d   •   MELHOR SETOR  %d/10" % [Profile.credits, Profile.best_stage], Vector2(c.x, Cfg.H * 0.9 + 26.0), 12, Cfg.YELLOW, HORIZONTAL_ALIGNMENT_CENTER, false)
+
+
+# ------------------------------------------------------------------ Hangar (loja)
+
+func _shop() -> void:
+	var m = main
+	var cx := Cfg.W / 2.0
+	draw_rect(Rect2(0, 0, Cfg.W, Cfg.H), Color(Cfg.BG, 0.55))
+	Neon.glitch(self, "HANGAR", Vector2(cx, 60.0), 46, m.t, Cfg.CYAN, Cfg.MAGENTA)
+	Neon.text(self, "CRÉDITOS  %d" % Profile.credits, Vector2(cx, 112.0), 20, Cfg.YELLOW, HORIZONTAL_ALIGNMENT_CENTER, true)
+	Neon.text(self, "partidas: %d   •   melhor setor: %d/10" % [Profile.runs, Profile.best_stage], Vector2(cx, 140.0), 11, Color(1, 1, 1, 0.5), HORIZONTAL_ALIGNMENT_CENTER, false)
+
+	var rows: Array = m.shop_rows()
+	var desc := ""
+	for i in rows.size():
+		var row: Dictionary = rows[i]
+		var y: float = m.shop_row_y(i)
+		var sel: bool = i == m.shop_sel
+		if sel:
+			Neon.poly(self, PackedVector2Array([Vector2(16, y - 21), Vector2(Cfg.W - 16, y - 21), Vector2(Cfg.W - 16, y + 21), Vector2(16, y + 21)]), Cfg.CYAN, 1.4, 0.08)
+		match row["type"]:
+			"start":
+				Neon.text(self, ">>  INICIAR MISSÃO  <<", Vector2(cx, y), 20, Cfg.LIME if sel else Color(Cfg.LIME, 0.7), HORIZONTAL_ALIGNMENT_CENTER, sel)
+				if sel:
+					desc = "Toda partida começa no Setor 01. Morra, compre upgrades, volte mais forte."
+			"weapon":
+				var w: String = Profile.start_weapon
+				var wc: Color = Cfg.WEAPON_COLORS[w]
+				Neon.text(self, "ARMA INICIAL", Vector2(32, y), 15, Cfg.WHITE, HORIZONTAL_ALIGNMENT_LEFT, false)
+				Neon.text(self, "<  %s  >" % Cfg.WEAPON_NAMES[w], Vector2(Cfg.W - 32.0, y), 15, wc, HORIZONTAL_ALIGNMENT_RIGHT, sel)
+				if sel:
+					desc = "Escolha com as setas laterais (ou toque). Laser e Enxame precisam ser liberados na loja."
+			"up":
+				var id: String = row["id"]
+				var u: Dictionary = Profile.upgrade_def(id)
+				var lv: int = Profile.level(id)
+				var mx: int = Profile.max_level(id)
+				var cost: int = Profile.next_cost(id)
+				Neon.text(self, u["name"], Vector2(32, y), 15, Cfg.WHITE if sel else Color(0.8, 0.8, 0.9), HORIZONTAL_ALIGNMENT_LEFT, false)
+				for k in mx:
+					var px := 250.0 + k * 18.0
+					var on := k < lv
+					draw_rect(Rect2(px, y - 5.0, 12.0, 10.0), Cfg.CYAN if on else Color(Cfg.CYAN, 0.15))
+				var ctext := "MÁX" if cost < 0 else "%d CR" % cost
+				var ccol := Cfg.LIME if cost < 0 else (Cfg.YELLOW if Profile.credits >= cost else Color(Cfg.RED, 0.8))
+				Neon.text(self, ctext, Vector2(Cfg.W - 32.0, y), 15, ccol, HORIZONTAL_ALIGNMENT_RIGHT, false)
+				if sel:
+					desc = u["desc"]
+	# descrição do item selecionado + mensagem de compra
+	var dy := Cfg.SHOP_Y0 + rows.size() * Cfg.SHOP_ROW_H + 6.0
+	Neon.text(self, desc, Vector2(cx, dy), 12, Color(0.85, 0.85, 1.0), HORIZONTAL_ALIGNMENT_CENTER, false)
+	if m.shop_msg_t > 0.0:
+		Neon.text(self, m.shop_msg, Vector2(cx, dy + 26.0), 14, Cfg.YELLOW, HORIZONTAL_ALIGNMENT_CENTER, true)
+	var hint := "toque: seleciona  •  toque de novo: compra" if Controls.is_touch else "cima/baixo: escolher  •  ENTER comprar  •  ESC voltar"
+	Neon.text(self, hint, Vector2(cx, Cfg.H - 22.0), 11, Color(1, 1, 1, 0.45), HORIZONTAL_ALIGNMENT_CENTER, false)

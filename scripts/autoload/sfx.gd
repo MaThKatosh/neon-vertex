@@ -3,7 +3,8 @@ extends Node
 ## Para trocar por sons/músicas de verdade depois, basta colocar AudioStreams em `sounds` e `tracks`.
 
 const RATE := 22050
-const GAP := {"shoot": 0.06, "hit": 0.045, "explode": 0.035, "graze": 0.045, "enemy_shot": 0.08}
+const GAP := {"shoot": 0.06, "hit": 0.045, "explode": 0.035, "graze": 0.045, "enemy_shot": 0.08,
+	"laser": 0.15, "charge": 0.12, "coin": 0.04}
 
 var sounds := {}
 var tracks := {}
@@ -155,6 +156,29 @@ func _build_sfx() -> void:
 	for i in 4:
 		_tone(i * 0.22, 0.3, down[i], down[i] * 0.98, 0.3, 2, 1800.0)
 	sounds["game_over"] = _wav(false)
+
+	_new_buf(0.5)
+	_tone(0.0, 0.45, 180.0, 120.0, 0.35, 2, 1500.0)
+	_noise(0.0, 0.45, 0.25, 3000.0, 800.0)
+	sounds["laser"] = _wav(false)
+
+	_new_buf(0.4)
+	_tone(0.0, 0.38, 300.0, 900.0, 0.18, 1, 2500.0)
+	sounds["charge"] = _wav(false)
+
+	_new_buf(0.25)
+	_tone(0.0, 0.07, 988.0, 0.0, 0.25, 1, 4000.0)
+	_tone(0.07, 0.16, 1319.0, 0.0, 0.25, 1, 4000.0)
+	sounds["coin"] = _wav(false)
+
+	_new_buf(0.35)
+	_tone(0.0, 0.3, 1400.0, 500.0, 0.35, 0)
+	_noise(0.0, 0.2, 0.2, 5000.0, 1500.0)
+	sounds["shield"] = _wav(false)
+
+	_new_buf(0.2)
+	_tone(0.0, 0.18, 200.0, 140.0, 0.3, 1, 1200.0)
+	sounds["deny"] = _wav(false)
 
 
 # ------------------------------------------------------------------ trilhas

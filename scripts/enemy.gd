@@ -43,7 +43,7 @@ func setup(m, k: String, pos: Vector2, params: Dictionary) -> void:
 	p = params
 	z_index = 2
 	var d: Dictionary = DEFS[k]
-	hp = ceilf(float(d["hp"]) * main.hp_mul)
+	hp = ceilf(float(d["hp"]) * main.enemy_hp_mul)
 	r = d["r"]
 	score = d["score"]
 	_ph = randf() * TAU
@@ -85,7 +85,7 @@ func step(dt: float) -> void:
 				position.y -= 150.0 * dt
 			rot += dt * 1.2
 			if t > 0.6 and t < stay:
-				_cd -= dt * main.rate_mul
+				_cd -= dt * main.enemy_rate
 				if _cd <= 0.0:
 					_cd = _pf("rate", 1.5)
 					bl.aim_fan(position, int(_pf("n", 3.0)), 0.35, 220.0, {"color": Cfg.ORANGE, "r": 6.0})
@@ -112,7 +112,7 @@ func step(dt: float) -> void:
 				position.y -= 110.0 * dt
 			rot += dt * 0.8
 			if t > 1.0 and t < stay:
-				_cd -= dt * main.rate_mul
+				_cd -= dt * main.enemy_rate
 				if _cd <= 0.0:
 					_cd = 0.32
 					bl.ring(position, 6, 150.0, _a, {"color": Cfg.PURPLE, "r": 7.0})

@@ -24,6 +24,7 @@ config/icon="res://icon.svg"
 
 Sfx="*res://scripts/autoload/sfx.gd"
 Controls="*res://scripts/autoload/controls.gd"
+Profile="*res://scripts/autoload/profile.gd"
 
 [display]
 

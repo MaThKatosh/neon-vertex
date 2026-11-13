@@ -51,4 +51,28 @@ const WEAPON_COLORS := {
 	"homing": Color(0.36, 1.0, 0.69),
 }
 
+# Créditos (moeda da loja). Ficam salvos entre partidas.
+const CREDITS := {"diamond": 1, "gunner": 3, "dart": 2, "orb": 1, "turret": 8}
+const BOSS_CREDITS := 40           # + 20 por setor
+const CLEAR_BONUS := 1000          # zerar os 10 setores
+
+# Loja (Hangar). `costs` = preço de cada nível; o número de preços é o nível máximo.
+const UPGRADES := [
+	{"id": "hearts", "name": "CORAÇÕES", "desc": "+1 coração máximo (e no início da partida)", "costs": [150, 400]},
+	{"id": "bombs", "name": "BOMBAS", "desc": "+1 bomba no início e em cada setor", "costs": [80, 180, 350]},
+	{"id": "power", "name": "PODER INICIAL", "desc": "Começa a partida com mais poder de tiro", "costs": [120, 300, 600]},
+	{"id": "damage", "name": "DANO", "desc": "+12% de dano em todos os tiros", "costs": [100, 200, 350, 550, 800]},
+	{"id": "rate", "name": "CADÊNCIA", "desc": "+8% de velocidade de disparo", "costs": [100, 220, 400, 650]},
+	{"id": "magnet", "name": "ÍMÃ", "desc": "Puxa itens de mais longe", "costs": [60, 140, 260]},
+	{"id": "invuln", "name": "RECUPERAÇÃO", "desc": "+0,4 s de invulnerabilidade após levar dano", "costs": [80, 180, 320]},
+	{"id": "shield", "name": "ESCUDO", "desc": "Absorve 1 acerto por setor (por nível), sem perder coração", "costs": [250, 550, 1000]},
+	{"id": "drones", "name": "DRONES", "desc": "Nv1: 1 drone · Nv2: 2 drones · Nv3: drones mais fortes", "costs": [300, 700, 1200]},
+	{"id": "laser", "name": "ARMA: LASER", "desc": "Libera começar a partida com o Laser", "costs": [400]},
+	{"id": "homing", "name": "ARMA: ENXAME", "desc": "Libera começar a partida com o Enxame", "costs": [400]},
+]
+
+# Layout da loja (usado pelo main.gd e pelo hud.gd)
+const SHOP_Y0 := 176.0
+const SHOP_ROW_H := 50.0
+
 const SAVE_PATH := "user://save.cfg"

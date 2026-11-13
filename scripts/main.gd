@@ -1,16 +1,23 @@
 class_name Main
 extends Node2D
 ## Cena principal: monta o mundo, roda a máquina de estados do jogo, o "diretor" das fases,
-## as colisões e a pontuação. Tudo é atualizado aqui em ordem fixa, a 60 passos por segundo.
+## as colisões, a pontuação e os créditos. Tudo é atualizado aqui em ordem fixa, a 60 passos por segundo.
 ##
-## Estados: title -> playing <-> paused -> gameover / victory
+## Estados: title -> shop (Hangar) -> playing <-> paused -> gameover / victory -> shop ...
 ## Fases de um setor: intro -> waves -> warning -> boss -> clear
+## Campanha roguelite: toda partida começa no setor 1; os créditos ganhos compram upgrades permanentes.
 
 const BOSS_SCRIPTS := {
 	"square": preload("res://scripts/bosses/boss_square.gd"),
 	"circle": preload("res://scripts/bosses/boss_circle.gd"),
+	"triangle": preload("res://scripts/bosses/boss_triangle.gd"),
 	"pentagon": preload("res://scripts/bosses/boss_pentagon.gd"),
 	"hexagon": preload("res://scripts/bosses/boss_hexagon.gd"),
+	"star": preload("res://scripts/bosses/boss_star.gd"),
+	"twins": preload("res://scripts/bosses/boss_twins.gd"),
+	"octagon": preload("res://scripts/bosses/boss_octagon.gd"),
+	"tesseract": preload("res://scripts/bosses/boss_tesseract.gd"),
+	"chaos": preload("res://scripts/bosses/boss_chaos.gd"),
 }
 const TOUCH_BUTTONS := [
 	{"pos": Vector2(270, 34), "r": 34.0, "action": "pause"},
@@ -21,11 +28,12 @@ var state := "title"
 var state_t := 0.0
 var t := 0.0
 var score := 0
-var hi := 0
 var new_hi := false
 var loop := 0                 # ciclo (cada volta completa fica mais difícil)
 var hp_mul := 1.0
 var rate_mul := 1.0
+var enemy_hp_mul := 1.0       # cresce a cada setor
+var enemy_rate := 1.0
 
 var stage_idx := 0
 var stage: Dictionary = {}
@@ -39,7 +47,16 @@ var kills := 0
 var dead_t := 0.0
 var menu_sel := 0
 var menu_items: Array = []
-var save_enabled := true      # os testes automáticos desligam para não gravar recorde falso
+
+# créditos da partida atual (vão para o perfil ao "depositar")
+var run_credits := 0
+var _banked := 0
+var summary: Array = []       # linhas da tela de fim de partida
+
+# loja
+var shop_sel := 0
+var shop_msg := ""
+var shop_msg_t := 0.0
 
 var bg
 var items
@@ -81,7 +98,6 @@ func _ready() -> void:
 	hud.main = self
 	layer.add_child(hud)
 	_setup_glow()
-	_load_save()
 	Sfx.music("title")
 
 
@@ -104,6 +120,7 @@ func _notification(what: int) -> void:
 	if what == NOTIFICATION_APPLICATION_FOCUS_OUT or what == NOTIFICATION_APPLICATION_PAUSED:
 		if state == "playing":
 			_set_state("paused")
+		_bank()
 
 
 # ------------------------------------------------------------------ laço principal
@@ -118,9 +135,12 @@ func _physics_process(dt: float) -> void:
 	match state:
 		"title":
 			_update_title(dt)
+		"shop":
+			_update_shop(dt)
 		"playing":
 			if Controls.pressed("pause"):
 				_set_state("paused")
+				_bank()
 				Sfx.play("select")
 			else:
 				_update_playing(dt)
@@ -128,18 +148,18 @@ func _physics_process(dt: float) -> void:
 			if Controls.pressed("pause"):
 				_set_state("playing")
 			else:
-				_menu(["CONTINUAR", "MENU INICIAL"], _on_pause_menu)
+				_menu(["CONTINUAR", "ABANDONAR MISSÃO"], _on_pause_menu)
 		"gameover":
 			bg.speed = 0.3
 			bg.step(dt)
 			fx.step(dt)
 			if state_t > 1.2:
-				_menu(["JOGAR NOVAMENTE", "MENU INICIAL"], _on_gameover_menu)
+				_menu(["HANGAR (LOJA)", "MENU INICIAL"], _on_end_menu)
 		"victory":
 			bg.step(dt)
 			fx.step(dt)
 			if state_t > 1.2:
-				_menu(["CICLO %d" % (loop + 2), "MENU INICIAL"], _on_victory_menu)
+				_menu(["NOVO CICLO (MAIS DIFÍCIL)", "HANGAR (LOJA)"], _on_victory_menu)
 
 	cam.offset = Vector2(randf_range(-1.0, 1.0), randf_range(-1.0, 1.0)) * fx.shake if fx.shake > 0.1 else Vector2.ZERO
 	hud.queue_redraw()
@@ -156,11 +176,13 @@ func _update_title(dt: float) -> void:
 	fx.step(dt)
 	if state_t > 0.3 and (Controls.pressed("confirm") or Controls.taps.size() > 0):
 		Sfx.play("select")
-		_new_game()
+		_open_shop()
 
 
 func _update_playing(dt: float) -> void:
 	bg.speed = 1.6 if phase == "boss" else 1.0
+	if stage_idx == Stages.ALL.size() - 1:
+		bg.color = Color.from_hsv(fmod(t * 0.05, 1.0), 0.7, 1.0)   # setor final: cores mudando
 	bg.step(dt)
 	_update_director(dt)
 	_update_timers(dt)
@@ -182,10 +204,7 @@ func _update_playing(dt: float) -> void:
 	if player.dead:
 		dead_t += dt
 		if dead_t > 2.2:
-			_save_hi()
-			_set_state("gameover")
-			Sfx.music("silence")
-			Sfx.play("game_over")
+			_end_run(false)
 
 
 # ------------------------------------------------------------------ estados e menus
@@ -203,6 +222,9 @@ func _new_game() -> void:
 	kills = 0
 	dead_t = 0.0
 	new_hi = false
+	run_credits = 0
+	_banked = 0
+	Profile.runs += 1
 	player.reset()
 	player.visible = true
 	_set_difficulty()
@@ -212,6 +234,8 @@ func _new_game() -> void:
 
 func _next_loop() -> void:
 	loop += 1
+	_banked = 0
+	run_credits = 0
 	_set_difficulty()
 	_begin_stage(0)
 	_set_state("playing")
@@ -225,6 +249,43 @@ func _to_title() -> void:
 	bg.color = Cfg.MAGENTA
 	_set_state("title")
 	Sfx.music("title")
+
+
+func _open_shop() -> void:
+	_clear_world()
+	fx.clear_all()
+	banner = null
+	player.visible = false
+	bg.color = Cfg.CYAN
+	shop_sel = 0
+	shop_msg = ""
+	_set_state("shop")
+	Sfx.music("title")
+
+
+## Fim da partida (morte ou vitória): deposita créditos e monta o resumo.
+func _end_run(won: bool) -> void:
+	if won:
+		add_credits(Cfg.CLEAR_BONUS)
+	_bank()
+	Profile.best_stage = maxi(Profile.best_stage, stage_idx + 1)
+	if score > Profile.hi:
+		Profile.hi = score
+		new_hi = true
+	Profile.save_profile()
+	summary = [
+		"PONTOS  %d" % score,
+		"NOVO RECORDE!" if new_hi else "RECORDE  %d" % Profile.hi,
+		"SETOR ALCANÇADO  %d / %d" % [stage_idx + 1, Stages.ALL.size()],
+		"CRÉDITOS GANHOS  +%d" % run_credits,
+	]
+	if won:
+		_set_state("victory")
+		Sfx.music("title")
+	else:
+		_set_state("gameover")
+		Sfx.music("silence")
+		Sfx.play("game_over")
 
 
 func _set_difficulty() -> void:
@@ -263,12 +324,12 @@ func _on_pause_menu(i: int) -> void:
 	if i == 0:
 		_set_state("playing")
 	else:
-		_to_title()
+		_end_run(false)
 
 
-func _on_gameover_menu(i: int) -> void:
+func _on_end_menu(i: int) -> void:
 	if i == 0:
-		_new_game()
+		_open_shop()
 	else:
 		_to_title()
 
@@ -277,7 +338,99 @@ func _on_victory_menu(i: int) -> void:
 	if i == 0:
 		_next_loop()
 	else:
+		_open_shop()
+
+
+# ------------------------------------------------------------------ Hangar (loja)
+
+## Linhas da loja: [INICIAR, ARMA INICIAL, upgrades...]
+func shop_rows() -> Array:
+	var rows: Array = [{"type": "start"}, {"type": "weapon"}]
+	for u in Cfg.UPGRADES:
+		rows.append({"type": "up", "id": u["id"]})
+	return rows
+
+
+func shop_row_y(i: int) -> float:
+	return Cfg.SHOP_Y0 + i * Cfg.SHOP_ROW_H
+
+
+func _update_shop(dt: float) -> void:
+	bg.speed = 0.4
+	bg.step(dt)
+	fx.step(dt)
+	shop_msg_t = maxf(0.0, shop_msg_t - dt)
+	var rows := shop_rows()
+	var n := rows.size()
+	if Controls.pressed("up"):
+		shop_sel = (shop_sel + n - 1) % n
+		Sfx.play("tick")
+	if Controls.pressed("down"):
+		shop_sel = (shop_sel + 1) % n
+		Sfx.play("tick")
+	if rows[shop_sel]["type"] == "weapon" and (Controls.pressed("left") or Controls.pressed("right")):
+		_shop_activate(shop_sel)
+	if Controls.pressed("confirm"):
+		_shop_activate(shop_sel)
+		return
+	if Controls.pressed("pause") and state_t > 0.2:
 		_to_title()
+		return
+	# toque: 1º toque seleciona, 2º compra (INICIAR e ARMA respondem no 1º toque)
+	for tp in Controls.taps:
+		var idx := int(floor((tp.y - Cfg.SHOP_Y0 + Cfg.SHOP_ROW_H * 0.5) / Cfg.SHOP_ROW_H))
+		if idx < 0 or idx >= n or absf(tp.x - Cfg.W / 2.0) > 250.0:
+			continue
+		if idx == shop_sel or rows[idx]["type"] != "up":
+			shop_sel = idx
+			_shop_activate(idx)
+		else:
+			shop_sel = idx
+			Sfx.play("tick")
+		return
+
+
+func _shop_activate(i: int) -> void:
+	var row: Dictionary = shop_rows()[i]
+	match row["type"]:
+		"start":
+			Sfx.play("select")
+			_new_game()
+		"weapon":
+			Profile.cycle_start_weapon()
+			Sfx.play("tick")
+		"up":
+			var id: String = row["id"]
+			match Profile.buy(id):
+				"ok":
+					Sfx.play("coin")
+					fx.spark(Vector2(Cfg.W - 70.0, shop_row_y(i)), Cfg.YELLOW, 14, 220.0)
+					_shop_say("COMPRADO: %s NV %d" % [Profile.upgrade_def(id)["name"], Profile.level(id)])
+				"max":
+					Sfx.play("deny")
+					_shop_say("NÍVEL MÁXIMO")
+				_:
+					Sfx.play("deny")
+					_shop_say("CRÉDITOS INSUFICIENTES")
+
+
+func _shop_say(msg: String) -> void:
+	shop_msg = msg
+	shop_msg_t = 2.0
+
+
+# ------------------------------------------------------------------ créditos
+
+func add_credits(n: int) -> void:
+	run_credits += int(round(n * (1.0 + loop * 0.5)))
+
+
+## Passa para o perfil (salvo) os créditos ainda não depositados desta partida.
+func _bank() -> void:
+	if run_credits > _banked:
+		Profile.credits += run_credits - _banked
+		_banked = run_credits
+		Profile.save_profile()
 
 
 # ------------------------------------------------------------------ diretor das fases
@@ -289,8 +442,11 @@ func _begin_stage(i: int) -> void:
 	phase = "intro"
 	pt = 0.0
 	ev_idx = 0
+	enemy_hp_mul = hp_mul * (1.0 + i * 0.08)
+	enemy_rate = rate_mul * (1.0 + i * 0.05)
 	bg.color = stage["color"]
-	player.bombs = maxi(player.bombs, Cfg.BOMBS_PER_STAGE)
+	player.bombs = maxi(player.bombs, Profile.stage_bombs())
+	player.shield = maxi(player.shield, Profile.shield_charges())
 	var sub: String = stage["sub"]
 	if loop > 0:
 		sub += "  //  CICLO %d" % (loop + 1)
@@ -328,7 +484,8 @@ func _update_director(dt: float) -> void:
 			if done and (enemies.is_empty() or pt > last_t + 12.0):
 				phase = "warning"
 				pt = 0.0
-				show_banner("WARNING", "ALVO DE GRANDE PORTE DETECTADO", Cfg.RED, 2.6)
+				var is_final := stage_idx == Stages.ALL.size() - 1
+				show_banner("WARNING", "ANOMALIA DETECTADA" if is_final else "ALVO DE GRANDE PORTE DETECTADO", Cfg.RED, 2.6)
 				Sfx.play("warning")
 				Sfx.music("silence")
 		"warning":
@@ -344,9 +501,7 @@ func _update_director(dt: float) -> void:
 				if stage_idx + 1 < Stages.ALL.size():
 					_begin_stage(stage_idx + 1)
 				else:
-					_save_hi()
-					_set_state("victory")
-					Sfx.music("title")
+					_end_run(true)
 
 
 func _opt(ev: Array, idx: int) -> Dictionary:
@@ -428,6 +583,10 @@ func spawn(kind: String, x: float, y: float, params: Dictionary = {}) -> Enemy:
 	return e
 
 
+func _boss_targetable() -> bool:
+	return boss != null and boss.alive and boss.state != "enter" and boss.state != "dying"
+
+
 ## Alvo mais próximo para os tiros teleguiados (posição) ou null se não houver nenhum.
 func nearest_target(from: Vector2):
 	var best = null
@@ -439,9 +598,11 @@ func nearest_target(from: Vector2):
 				best_d = d
 				best = e.position
 	if boss != null and boss.alive and boss.state == "fight":
-		var d: float = from.distance_squared_to(boss.position)
-		if d < best_d:
-			best = boss.position
+		for hp_ in boss.hit_points():
+			var d: float = from.distance_squared_to(hp_[0])
+			if d < best_d:
+				best_d = d
+				best = hp_[0]
 	return best
 
 
@@ -470,6 +631,7 @@ func kill_enemy(e) -> void:
 	fx.explode(e.position, e.color, 2.0 if big else 1.0)
 	fx.add_shake(8.0 if big else 3.0)
 	add_score(e.score)
+	add_credits(int(Cfg.CREDITS.get(e.kind, 1)))
 	fx.text(e.position, str(e.score), e.color, 14)
 	Sfx.play("big_explode" if big else "explode")
 	# a partir do ciclo 2, inimigos soltam balas ao morrer
@@ -512,6 +674,8 @@ func on_boss_defeated(b) -> void:
 	kill_all_enemies()
 	bullets.cancel_all(true)
 	add_score(20000)
+	var cr := Cfg.BOSS_CREDITS + 20 * stage_idx
+	add_credits(cr)
 	for k in 5:
 		items.spawn(b.position + Vector2(randf_range(-50.0, 50.0), randf_range(-30.0, 30.0)), "P")
 	items.spawn(b.position, "B")
@@ -522,9 +686,10 @@ func on_boss_defeated(b) -> void:
 	b.queue_free()
 	phase = "clear"
 	pt = 0.0
-	show_banner("SETOR LIMPO", "+20000", Cfg.LIME, 3.0)
+	show_banner("SETOR LIMPO", "+20000 PONTOS   +%d CRÉDITOS" % cr, Cfg.LIME, 3.0)
 	Sfx.music("silence")
 	Sfx.play("clear")
+	_bank()
 
 
 # ------------------------------------------------------------------ colisões
@@ -532,6 +697,7 @@ func on_boss_defeated(b) -> void:
 func _collide() -> void:
 	# tiros do jogador -> inimigos e chefe
 	var spark_col: Color = Cfg.WEAPON_COLORS[player.weapon]
+	var boss_pts: Array = boss.hit_points() if _boss_targetable() else []
 	for s in bullets.shots:
 		if not s.alive:
 			continue
@@ -548,11 +714,17 @@ func _collide() -> void:
 				else:
 					s.alive = false
 					break
-		if s.alive and boss != null and boss.alive and boss.state != "enter" and boss.state != "dying":
-			if pierce and s.hits.has(boss):
-				continue
-			var br: float = boss.radius + 6.0
-			if s.pos.distance_squared_to(boss.position) < br * br:
+		if not s.alive or boss_pts.is_empty() or boss == null:
+			continue
+		if boss.blocks(s.pos):
+			s.alive = false
+			fx.spark(s.pos, Cfg.WHITE, 2, 140.0, 0.2, 2.0)
+			continue
+		if pierce and s.hits.has(boss):
+			continue
+		for hp_ in boss_pts:
+			var br: float = hp_[1] + 6.0
+			if s.pos.distance_squared_to(hp_[0]) < br * br:
 				if pierce:
 					s.hits.append(boss)
 				else:
@@ -560,6 +732,9 @@ func _collide() -> void:
 				if boss.damage(s.dmg):
 					Sfx.play("hit", -8.0)
 				fx.spark(s.pos, spark_col, 1, 120.0, 0.2, 2.0)
+				break
+		if boss == null:
+			boss_pts = []
 
 	if player.dead:
 		return
@@ -599,6 +774,10 @@ func _collide() -> void:
 
 	if invuln:
 		return
+	# lasers dos chefes
+	if bullets.beam_hits(pp, hr):
+		player.hit()
+		return
 	# corpos -> jogador
 	for e in enemies:
 		if not e.alive:
@@ -608,10 +787,12 @@ func _collide() -> void:
 			player.hit()
 			damage_enemy(e, 10.0)
 			return
-	if boss != null and boss.alive and boss.state != "dying" and boss.state != "enter":
-		var br: float = boss.radius * 0.75
-		if boss.position.distance_squared_to(pp) < br * br:
-			player.hit()
+	if _boss_targetable():
+		for hp_ in boss.hit_points():
+			var br: float = hp_[1] * 0.75
+			if pp.distance_squared_to(hp_[0]) < br * br:
+				player.hit()
+				return
 
 
 # ------------------------------------------------------------------ pontos e itens
@@ -645,11 +826,11 @@ func collect(kind: String, pos: Vector2, weapon := "") -> void:
 				fx.text(pos + Vector2(0, -20), "+1000", Cfg.LIME, 14)
 		"B":
 			col = Cfg.YELLOW
-			player.bombs = mini(Cfg.MAX_BOMBS, player.bombs + 1)
+			player.bombs = mini(Cfg.MAX_BOMBS + Profile.level("bombs"), player.bombs + 1)
 			fx.text(pos + Vector2(0, -20), "+BOMBA", col, 14)
 		"V":
 			col = Cfg.PINK
-			if player.lives < Cfg.MAX_LIVES:
+			if player.lives < Profile.lives_cap():
 				player.lives += 1
 				fx.text(pos + Vector2(0, -20), "+VIDA", col, 14)
 			else:
@@ -657,21 +838,3 @@ func collect(kind: String, pos: Vector2, weapon := "") -> void:
 				fx.text(pos + Vector2(0, -20), "+5000", col, 14)
 	fx.spark(pos, col, 10, 200.0)
 	Sfx.play("power")
-
-
-func _load_save() -> void:
-	var cf := ConfigFile.new()
-	if cf.load(Cfg.SAVE_PATH) == OK:
-		hi = int(cf.get_value("score", "hi", 0))
-
-
-func _save_hi() -> void:
-	if not save_enabled:
-		return
-	if score > hi:
-		hi = score
-		new_hi = true
-		var cf := ConfigFile.new()
-		cf.load(Cfg.SAVE_PATH)
-		cf.set_value("score", "hi", hi)
-		cf.save(Cfg.SAVE_PATH)

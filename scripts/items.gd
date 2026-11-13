@@ -52,7 +52,8 @@ func step(dt: float) -> void:
 		var d2: float = it.pos.distance_squared_to(pl.position)
 		# a arma não é puxada pela linha do topo, para dar tempo de escolher
 		var top_pull: bool = pl.position.y < Cfg.H * 0.28 and it.kind != "W"
-		if not pl.dead and (it.magnet or d2 < 120.0 * 120.0 or top_pull):
+		var mr := Profile.magnet_radius()
+		if not pl.dead and (it.magnet or d2 < mr * mr or top_pull):
 			it.pos += (pl.position - it.pos).normalized() * 560.0 * dt
 		else:
 			var fall := 80.0 if it.kind == "W" else 110.0

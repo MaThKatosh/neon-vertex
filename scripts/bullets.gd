@@ -19,7 +19,24 @@ class Bullet:
 	var grazed := false
 	var split_t := -1.0      # se >= 0: após esse tempo a bala "estoura" chamando `split`
 	var split := Callable()
+	var bounce := 0          # quantas vezes ainda ricocheteia nas paredes laterais
 	var alive := true
+
+## Laser de chefe: primeiro um aviso fino (warn), depois o feixe que dá dano (dur).
+class Beam:
+	var pos := Vector2.ZERO
+	var ang := 0.0
+	var ang_vel := 0.0
+	var length := 1600.0
+	var width := 16.0
+	var warn := 0.8
+	var dur := 1.0
+	var t := 0.0
+	var color := Color.WHITE
+	var alive := true
+
+	func active() -> bool:
+		return t >= warn and t < warn + dur
 
 class Shot:
 	var pos := Vector2.ZERO
@@ -35,6 +52,7 @@ const MAX_BULLETS := 1500
 var main
 var list: Array[Bullet] = []    # projéteis inimigos
 var shots: Array[Shot] = []     # tiros do jogador
+var beams: Array[Beam] = []     # lasers dos chefes
 var speed_mul := 1.0            # aumenta nos ciclos mais difíceis
 
 var _free: Array[Bullet] = []
@@ -59,7 +77,7 @@ func _ready() -> void:
 
 # ------------------------------------------------------------------ criação
 
-## Opções aceitas em `o`: color, r, needle, accel, ang_vel, min_speed, max_speed, split, split_t
+## Opções aceitas em `o`: color, r, needle, accel, ang_vel, min_speed, max_speed, split, split_t, bounce
 func shoot(pos: Vector2, ang: float, speed: float, o: Dictionary = {}) -> Bullet:
 	if list.size() >= MAX_BULLETS:
 		return null
@@ -76,6 +94,7 @@ func shoot(pos: Vector2, ang: float, speed: float, o: Dictionary = {}) -> Bullet
 	b.needle = bool(o.get("needle", false))
 	b.split = o.get("split", Callable())
 	b.split_t = float(o.get("split_t", -1.0))
+	b.bounce = int(o.get("bounce", 0))
 	b.t = 0.0
 	b.grazed = false
 	b.alive = true
@@ -91,6 +110,35 @@ func add_shot(pos: Vector2, vel: Vector2, dmg: float, kind := 0) -> void:
 	s.dmg = dmg
 	s.kind = kind
 	shots.append(s)
+
+
+## Cria um laser. ang_vel faz o feixe girar; o chefe também pode mexer em pos/ang/length a cada quadro.
+func beam(pos: Vector2, ang: float, warn: float, dur: float, width := 16.0, col := Cfg.RED, ang_vel := 0.0, length := 1600.0) -> Beam:
+	var bm := Beam.new()
+	bm.pos = pos
+	bm.ang = ang
+	bm.warn = warn
+	bm.dur = dur
+	bm.width = width
+	bm.color = col
+	bm.ang_vel = ang_vel
+	bm.length = length
+	beams.append(bm)
+	Sfx.play("charge")
+	return bm
+
+
+## Algum laser ativo encosta no círculo (p, r)?
+func beam_hits(p: Vector2, r: float) -> bool:
+	for bm: Beam in beams:
+		if not bm.active():
+			continue
+		var dir := Vector2.from_angle(bm.ang)
+		var rel := p - bm.pos
+		var along := clampf(rel.dot(dir), 0.0, bm.length)
+		if (rel - dir * along).length() < bm.width * 0.4 + r:
+			return true
+	return false
 
 
 ## Tiro teleguiado: vira aos poucos na direção do alvo mais próximo.
@@ -156,6 +204,11 @@ func step(dt: float) -> void:
 			b.ang += b.ang_vel * dt
 			b.vel = Vector2.from_angle(b.ang) * b.speed
 		b.pos += b.vel * dt
+		if b.bounce > 0 and (b.pos.x < 6.0 or b.pos.x > Cfg.W - 6.0):
+			b.bounce -= 1
+			b.pos.x = clampf(b.pos.x, 6.0, Cfg.W - 6.0)
+			b.vel.x = -b.vel.x
+			b.ang = PI - b.ang
 		if b.split_t >= 0.0 and b.t >= b.split_t:
 			b.alive = false
 			b.split_t = -1.0
@@ -178,6 +231,19 @@ func step(dt: float) -> void:
 			shots[j] = s
 			j += 1
 	shots.resize(j)
+
+	j = 0
+	for k in beams.size():
+		var bm: Beam = beams[k]
+		var was_active := bm.active()
+		bm.t += dt
+		bm.ang += bm.ang_vel * dt
+		if not was_active and bm.active():
+			Sfx.play("laser")
+		if bm.alive and bm.t < bm.warn + bm.dur:
+			beams[j] = bm
+			j += 1
+	beams.resize(j)
 	queue_redraw()
 	_shot_layer.queue_redraw()
 
@@ -208,6 +274,10 @@ func cancel(center: Vector2, radius: float, give_score: bool) -> int:
 		if n < 200:
 			main.fx.spark(b.pos, b.color, 1, 60.0, 0.35, 2.5)
 	_compact()
+	if radius <= 0.0:   # limpar a tela inteira também desliga os lasers
+		for bm in beams:
+			bm.alive = false
+		beams.clear()
 	if give_score and n > 0:
 		main.add_score(n * 10)
 	return n
@@ -222,6 +292,7 @@ func clear_all() -> void:
 		_free.append(b)
 	list.clear()
 	shots.clear()
+	beams.clear()
 
 
 # ------------------------------------------------------------------ desenho
@@ -242,6 +313,24 @@ func _draw() -> void:
 		draw_texture_rect(ct, Rect2(-r * 1.15, -r * 1.15, r * 2.3, r * 2.3), false, col)
 		draw_texture_rect(ct, Rect2(-hr, -hr, hr * 2.0, hr * 2.0), false, Neon.hot(col.lerp(Color.WHITE, 0.7), 1.5))
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
+
+	for bm: Beam in beams:
+		var a := bm.pos
+		var b2 := a + Vector2.from_angle(bm.ang) * bm.length
+		var col := bm.color
+		if bm.t < bm.warn:
+			# aviso: linha fina piscando + faixa fraca mostrando a largura do perigo
+			var fl := 0.25 + 0.35 * absf(sin(bm.t * 30.0))
+			draw_line(a, b2, Color(col, fl * 0.25), bm.width * 0.8)
+			draw_line(a, b2, Color(col, fl), 2.0)
+		else:
+			var grow := minf(1.0, (bm.t - bm.warn) / 0.08)
+			var fade := minf(1.0, (bm.warn + bm.dur - bm.t) / 0.15)
+			var w := bm.width * grow * fade
+			draw_line(a, b2, Color(col, 0.18), w * 2.2)
+			draw_line(a, b2, Color(col, 0.55), w)
+			draw_line(a, b2, Neon.hot(col.lerp(Color.WHITE, 0.7), 1.6), w * 0.4)
+			Neon.glow(self, a, w * 1.6, col)
 
 
 func _draw_shots(ci: CanvasItem) -> void:
