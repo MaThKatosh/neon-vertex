@@ -17,7 +17,7 @@ var _mode := ""
 var _last := {}
 var _b := PackedFloat32Array()   # buffer de trabalho da síntese dos efeitos
 var _thread: Thread
-var _tier := 0
+var _pending: Array = []   # trilhas a gerar aos poucos (versão Web)
 
 
 func _ready() -> void:
@@ -36,8 +36,14 @@ func _ready() -> void:
 	tracks["title"] = _build_track(s, "title", 0)
 	tracks["stage0"] = _build_track(s, "stage", 0)
 	tracks["boss0"] = _build_track(s, "boss", 0)
-	_thread = Thread.new()
-	_thread.start(_build_rest)
+	if OS.has_feature("web"):
+		# no navegador não há threads: gera uma trilha a cada ~2 s pelo _process (os setores 1-2 já estão prontos)
+		for k in range(1, 5):
+			_pending.append(["stage", k])
+			_pending.append(["boss", k])
+	else:
+		_thread = Thread.new()
+		_thread.start(_build_rest)
 	var cf := ConfigFile.new()
 	if cf.load(Cfg.SAVE_PATH) == OK:
 		muted = bool(cf.get_value("audio", "muted", false))
@@ -97,6 +103,12 @@ func _on_rest_ready(done: Dictionary) -> void:
 	_thread.wait_to_finish()
 	for key in done:
 		tracks[key] = done[key]
+
+
+func _process(_delta: float) -> void:
+	if not _pending.is_empty() and Engine.get_process_frames() % 120 == 0:
+		var job: Array = _pending.pop_front()
+		tracks["%s%d" % job] = _build_track(Synth.new(), job[0], job[1])
 
 
 func _exit_tree() -> void:

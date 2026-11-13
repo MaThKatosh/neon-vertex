@@ -1,6 +1,7 @@
 @echo off
 rem Exporta as versoes Windows (.exe + .zip) e Android (.apk) do NEON//VERTEX.
 rem Uso: de dois cliques neste arquivo, ou rode  tools\export.cmd  na pasta do projeto.
+rem       tools\export.cmd windows   (so a versao Windows)
 setlocal
 chcp 65001 >nul
 cd /d "%~dp0.."
@@ -25,14 +26,26 @@ if not exist "build\android" mkdir "build\android"
 
 echo == Exportando Windows ==
 "%GODOT%" --headless --path "%PROJECT%" --export-release "Windows Desktop" "%PROJECT%\build\windows\NEON-VERTEX.exe"
+if /i "%~1"=="windows" goto :zip
 echo == Exportando Android ==
 "%GODOT%" --headless --path "%PROJECT%" --export-release "Android" "%PROJECT%\build\android\NEON-VERTEX.apk"
 
+echo == Exportando Web ==
+if exist "build\web" rmdir /s /q "build\web"
+mkdir "build\web"
+"%GODOT%" --headless --path "%PROJECT%" --export-release "Web" "%PROJECT%\build\web\index.html"
+
+:zip
 echo == Compactando ==
 if exist "build\NEON-VERTEX-demo-windows.zip" del "build\NEON-VERTEX-demo-windows.zip"
 tar -a -c -f "build\NEON-VERTEX-demo-windows.zip" -C "build\windows" NEON-VERTEX.exe LEIA-ME.txt
+rem a versao Web vai para o itch.io como zip com o index.html na raiz
+if not exist "build\web\index.html" goto :done
+if exist "build\NEON-VERTEX-web.zip" del "build\NEON-VERTEX-web.zip"
+tar -a -c -f "build\NEON-VERTEX-web.zip" -C "build\web" *
 
+:done
 echo.
 echo == Resultado ==
-dir /-c "build\windows\NEON-VERTEX.exe" "build\android\NEON-VERTEX.apk" "build\NEON-VERTEX-demo-windows.zip" | findstr /i "NEON"
+dir /-c "build\windows\NEON-VERTEX.exe" "build\android\NEON-VERTEX.apk" "build\NEON-VERTEX-demo-windows.zip" "build\NEON-VERTEX-web.zip" | findstr /i "NEON"
 endlocal
